@@ -20,6 +20,7 @@ package pkg
 import (
 	"encoding/json"
 	"fmt"
+	kLog "github.com/devtron-labs/deprecation-checker/log"
 	"github.com/getkin/kin-openapi/openapi3"
 	"regexp"
 	"sigs.k8s.io/yaml"
@@ -31,6 +32,7 @@ func (ks *kubernetesSpec) ValidateYaml(spec string) error {
 	var err error
 	jsonSpec, err := yaml.YAMLToJSON([]byte(spec))
 	if err != nil {
+		kLog.Debug(fmt.Sprintf("%v", err))
 		return err
 	}
 	return ks.ValidateJson(string(jsonSpec))
@@ -41,7 +43,7 @@ func (ks *kubernetesSpec) ValidateJson(spec string) error {
 	object := make(map[string]interface{})
 	err = json.Unmarshal([]byte(spec), &object)
 	if err != nil {
-		fmt.Println(err)
+		kLog.Debug(fmt.Sprintf("%v", err))
 		return err
 	}
 	return ks.ValidateObject(object)
@@ -71,14 +73,14 @@ func (ks *kubernetesSpec) ValidateObject(object map[string]interface{}) error {
 	if pathItem == nil {
 		if _, ok := ks.kindMap[strings.ToLower(kind)]; !ok {
 			errorMsg := fmt.Sprintf("unsupported api - apiVersion: %s, kind: %s", apiVersion, kind)
-			fmt.Println(errorMsg)
+			kLog.Debug(errorMsg)
 			return fmt.Errorf(errorMsg)
 		}
 		token = ks.kindMap[strings.ToLower(kind)]
 	}
 	dp, err := ks.Components.Schemas.JSONLookup(token)
 	if err != nil {
-		fmt.Println(err)
+		kLog.Debug(fmt.Sprintf("%v", err))
 		return err
 	}
 	scm := dp.(*openapi3.Schema)
@@ -89,7 +91,7 @@ func (ks *kubernetesSpec) ValidateObject(object map[string]interface{}) error {
 	if err != nil {
 		e := err.(openapi3.MultiError)
 		e = append(e, depError...)
-		fmt.Println(e)
+		//fmt.Println(e)
 		return e
 	}
 	return nil

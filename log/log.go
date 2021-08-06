@@ -44,3 +44,8 @@ func Error(message error) {
 		fmt.Printf("%s - %v\n", red("ERR "), message)
 	}
 }
+
+func Debug(message ...string) {
+	yellow := color.New(color.FgWhite).SprintFunc()
+	fmt.Printf("%s - %v\n", yellow("DEBUG"), strings.Join(message, " "))
+}

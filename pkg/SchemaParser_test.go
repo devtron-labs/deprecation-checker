@@ -246,7 +246,7 @@ func TestDownloadFile(t *testing.T) {
 		{
 			name: "Positive - Test deployment extension, handled via apps/v1",
 			args: args{releaseVersion: "1.18", object: extension_deployment},
-			wantErr: false,
+			wantErr: true,
 		},
 		{
 			name: "Positive - Test deployment extension",

@@ -267,6 +267,10 @@ func init() {
 	viper.BindPFlag("filename", RootCmd.Flags().Lookup("filename"))
 }
 
+func Config() *kubedd.Config {
+	return config
+}
+
 func main() {
 	Execute()
 }

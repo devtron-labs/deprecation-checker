@@ -32,7 +32,6 @@ func VisitJSON(key string, schema *openapi3.Schema, value interface{}, settings 
 }
 
 func visitJSON(key string, schema *openapi3.Schema, value interface{}, settings SchemaSettings) openapi3.MultiError {
-	fmt.Println("key: "+key)
 	var me []error
 	switch value := value.(type) {
 	case nil, bool, float64, string, int64:
@@ -95,7 +94,7 @@ func visitJSONObject(key string, schema *openapi3.Schema, object map[string]inte
 	}
 	for k, v := range object {
 		if s, ok := schema.Properties[k]; ok {
-			fmt.Printf("found key %s\n", k)
+			//fmt.Printf("found key %s\n", k)
 			schemaError := visitJSON(k, s.Value, v, settings)
 			if len(schemaError) != 0 {
 				me = append(me, schemaError...)
@@ -104,7 +103,7 @@ func visitJSONObject(key string, schema *openapi3.Schema, object map[string]inte
 				}
 			}
 		} else {
-			fmt.Printf("not found key %s\n", k)
+			//fmt.Printf("not found key %s\n", k)
 		}
 	}
 	return me
