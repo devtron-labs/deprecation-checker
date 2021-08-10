@@ -50,10 +50,6 @@ type Config struct {
 	// found at SchemaLocation
 	AdditionalSchemaLocations []string
 
-	// OpenShift represents whether to test against
-	// upstream Kubernetes or the OpenShift schemas
-	OpenShift bool
-
 	// Strict tells kubedd whether to prohibit properties not in
 	// the schema. The API allows them, but kubectl does not
 	Strict bool
@@ -103,7 +99,6 @@ func AddKubeaddFlags(cmd *cobra.Command, config *Config) *cobra.Command {
 	cmd.Flags().StringVarP(&config.DefaultNamespace, "default-namespace", "n", "default", "Namespace to assume in resources if no namespace is set in metadata:namespace")
 	cmd.Flags().BoolVar(&config.ExitOnError, "exit-on-error", false, "Immediately stop execution when the first error is encountered")
 	cmd.Flags().BoolVar(&config.IgnoreMissingSchemas, "ignore-missing-schemas", false, "Skip validation for resource definitions without a schema")
-	cmd.Flags().BoolVar(&config.OpenShift, "openshift", false, "Use OpenShift schemas instead of upstream Kubernetes")
 	cmd.Flags().BoolVar(&config.Strict, "strict", false, "Disallow additional properties not in schema")
 	cmd.Flags().StringVarP(&config.FileName, "filename", "f", "stdin", "filename to be displayed when testing manifests read from stdin")
 	cmd.Flags().StringSliceVar(&config.KindsToSkip, "skip-kinds", []string{}, "Comma-separated list of case-sensitive kinds to skip when validating against schemas")

@@ -21,10 +21,9 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	log2 "github.com/devtron-labs/deprecation-checker/pkg/log"
 	"log"
 	"os"
-
-	kLog "github.com/devtron-labs/deprecation-checker/log"
 )
 
 // TODO (brendanryan) move these structs to `/log` once we have removed the potential
@@ -78,14 +77,14 @@ func newSTDOutputManager() *STDOutputManager {
 func (s *STDOutputManager) Put(result ValidationResult) error {
 	if len(result.Errors) > 0 {
 		for _, desc := range result.Errors {
-			kLog.Warn(result.FileName, "contains an invalid", result.Kind, fmt.Sprintf("(%s)", result.QualifiedName()), "-", desc.String())
+			log2.Warn(result.FileName, "contains an invalid", result.Kind, fmt.Sprintf("(%s)", result.QualifiedName()), "-", desc.String())
 		}
 	} else if result.Kind == "" {
-		kLog.Success(result.FileName, "contains an empty YAML document")
+		log2.Success(result.FileName, "contains an empty YAML document")
 	} else if !result.ValidatedAgainstSchema {
-		kLog.Warn(result.FileName, "containing a", result.Kind, fmt.Sprintf("(%s)", result.QualifiedName()), "was not validated against a schema")
+		log2.Warn(result.FileName, "containing a", result.Kind, fmt.Sprintf("(%s)", result.QualifiedName()), "was not validated against a schema")
 	} else {
-		kLog.Success(result.FileName, "contains a valid", result.Kind, fmt.Sprintf("(%s)", result.QualifiedName()))
+		log2.Success(result.FileName, "contains a valid", result.Kind, fmt.Sprintf("(%s)", result.QualifiedName()))
 	}
 
 	return nil
