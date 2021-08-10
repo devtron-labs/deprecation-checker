@@ -32,7 +32,7 @@ func VisitJSON(key string, schema *openapi3.Schema, value interface{}, settings 
 }
 
 func visitJSON(key string, schema *openapi3.Schema, value interface{}, settings SchemaSettings) openapi3.MultiError {
-	var me []error
+	var me openapi3.MultiError
 	switch value := value.(type) {
 	case nil, bool, float64, string, int64:
 		if strings.Index(strings.ToLower(schema.Description), "deprecated") >= 0 {
@@ -68,7 +68,7 @@ func visitJSON(key string, schema *openapi3.Schema, value interface{}, settings 
 }
 
 func visitJSONArray(key string, schema *openapi3.Schema, object []interface{}, settings SchemaSettings) openapi3.MultiError {
-	var me []error
+	var me openapi3.MultiError
 	for _, obj := range object {
 		schemaError := visitJSON(key, schema.Items.Value, obj, settings)
 		if len(schemaError) != 0 {
@@ -79,7 +79,7 @@ func visitJSONArray(key string, schema *openapi3.Schema, object []interface{}, s
 }
 
 func visitJSONObject(key string, schema *openapi3.Schema, object map[string]interface{}, settings SchemaSettings) openapi3.MultiError {
-	var me []error
+	var me openapi3.MultiError
 	if strings.Index(strings.ToLower(schema.Description), "deprecated") >= 0 {
 		schemaError := &openapi3.SchemaError{
 			Value:       "",

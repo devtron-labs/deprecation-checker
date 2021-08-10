@@ -1,4 +1,4 @@
-package kubedd
+package pkg
 
 import (
 	"bytes"

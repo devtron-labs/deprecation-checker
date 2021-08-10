@@ -7,6 +7,7 @@ require (
 	github.com/getkin/kin-openapi v0.67.0
 	github.com/hashicorp/go-multierror v1.1.1
 	github.com/inconshreveable/mousetrap v1.0.0 // indirect
+	github.com/prometheus/common v0.4.0
 	github.com/spf13/cobra v0.0.0-20180820174524-ff0d02e85550
 	github.com/spf13/viper v1.7.1
 	github.com/stretchr/testify v1.7.0

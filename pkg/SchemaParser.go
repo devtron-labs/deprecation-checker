@@ -21,6 +21,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	kLog "github.com/devtron-labs/deprecation-checker/pkg/log"
 	"github.com/getkin/kin-openapi/openapi2"
 	"github.com/getkin/kin-openapi/openapi2conv"
 	"github.com/getkin/kin-openapi/openapi3"
@@ -32,8 +33,6 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
-
-	kLog "github.com/devtron-labs/deprecation-checker/log"
 )
 
 const (
@@ -49,6 +48,7 @@ const (
 type kubernetesSpec struct {
 	*openapi3.T
 	kindMap map[string]string
+	config *Config
 }
 
 type KubeChecker interface {
@@ -77,12 +77,12 @@ func (k *kubeCheckerImpl) LoadFromPath(releaseVersion string, filePath string, f
 	}
 	data, err := ioutil.ReadFile(filePath)
 	if err != nil {
-		kLog.Debug(fmt.Sprintf("%v", err))
+		//kLog.Debug(fmt.Sprintf("%v", err))
 		return err
 	}
 	openapi, err := loadOpenApi2(data)
 	if err != nil {
-		kLog.Debug(fmt.Sprintf("%v", err))
+		//kLog.Debug(fmt.Sprintf("%v", err))
 		return err
 	}
 	kindMap := buildKindMap(openapi)
@@ -96,12 +96,12 @@ func (k *kubeCheckerImpl) LoadFromUrl(releaseVersion string, force bool) error {
 	}
 	data, err := downloadFile(releaseVersion)
 	if err != nil {
-		kLog.Debug(fmt.Sprintf("%v", err))
+		//kLog.Debug(fmt.Sprintf("%v", err))
 		return err
 	}
 	openapi, err := loadOpenApi2(data)
 	if err != nil {
-		kLog.Debug(fmt.Sprintf("%v", err))
+		//kLog.Debug(fmt.Sprintf("%v", err))
 		return err
 	}
 	kindMap := buildKindMap(openapi)
@@ -113,14 +113,14 @@ func downloadFile(releaseVersion string) ([]byte, error) {
 	url := fmt.Sprintf(urlTemplate, releaseVersion)
 	resp, err := http.Get(url)
 	if err != nil {
-		kLog.Debug(fmt.Sprintf("%v", err))
+		//kLog.Debug(fmt.Sprintf("%v", err))
 		return []byte{}, err
 	}
 	defer resp.Body.Close()
 	var out bytes.Buffer
 	_, err = io.Copy(&out, resp.Body)
 	if err != nil {
-		kLog.Debug(fmt.Sprintf("%v", err))
+		//kLog.Debug(fmt.Sprintf("%v", err))
 		return []byte{}, err
 	}
 	return out.Bytes(), nil
@@ -131,46 +131,53 @@ func loadOpenApi2(data []byte) (*openapi3.T, error) {
 	stringData := string(data)
 	stringData, err = sjson.Delete(stringData, intOrStringFormat)
 	if err != nil {
-		kLog.Debug(fmt.Sprintf("%v", err))
+		//kLog.Debug(fmt.Sprintf("%v", err))
 		return nil, err
 	}
+
 	ctx := context.Background()
 	api := openapi2.T{}
 	err = (&api).UnmarshalJSON([]byte(stringData))
 	if err != nil {
-		kLog.Debug(fmt.Sprintf("%v", err))
+		//kLog.Debug(fmt.Sprintf("%v", err))
 		return nil, err
 	}
+
 	doc, err := openapi2conv.ToV3(&api)
 	if err != nil {
-		kLog.Debug(fmt.Sprintf("%v", err))
+		//kLog.Debug(fmt.Sprintf("%v", err))
 		return nil, err
 	}
+
 	err = doc.Validate(ctx)
 	if err != nil {
-		kLog.Debug(fmt.Sprintf("%v", err))
+		//kLog.Debug(fmt.Sprintf("%v", err))
 		return nil, err
 	}
+
 	doc3, err := doc.MarshalJSON()
 	if err != nil {
-		kLog.Debug(fmt.Sprintf("%v", err))
+		//kLog.Debug(fmt.Sprintf("%v", err))
 		return nil, err
 	}
+
 	stringData = string(doc3)
 	stringData, err = sjson.SetRaw(stringData, intOrStringPath, intOrStringType)
 	if err != nil {
-		kLog.Debug(fmt.Sprintf("%v", err))
+		//kLog.Debug(fmt.Sprintf("%v", err))
 		return nil, err
 	}
+
 	loader := &openapi3.Loader{Context: ctx}
 	doc, err = loader.LoadFromData([]byte(stringData))
 	if err != nil {
-		kLog.Debug(fmt.Sprintf("%v", err))
+		//kLog.Debug(fmt.Sprintf("%v", err))
 		return nil, err
 	}
+
 	err = doc.Validate(ctx)
 	if err != nil {
-		kLog.Debug(fmt.Sprintf("%v", err))
+		//kLog.Debug(fmt.Sprintf("%v", err))
 		return nil, err
 	}
 	for _, v := range doc.Components.Schemas {
@@ -181,7 +188,7 @@ func loadOpenApi2(data []byte) (*openapi3.T, error) {
 
 func buildKindMap(openapidoc *openapi3.T) map[string]string {
 	kindMap := map[string]string{}
-	for component, _ := range openapidoc.Components.Schemas {
+	for component := range openapidoc.Components.Schemas {
 		componentParts := strings.Split(component, ".")
 		if len(componentParts) > 0 {
 			kind := strings.ToLower(componentParts[len(componentParts)-1])
@@ -190,6 +197,7 @@ func buildKindMap(openapidoc *openapi3.T) map[string]string {
 			}
 			version, err := compareVersion(kindMap[kind], component)
 			if err != nil {
+				kLog.Debug(fmt.Sprintf("unable to compare %s and %s", kind, component))
 				continue
 			}
 			kindMap[kind] = version
@@ -214,7 +222,7 @@ func compareVersion(lhs, rhs string) (string, error) {
 
 	isSmaller, err := isSmallerVersion(firstApiVersion, secondApiVersion)
 	if err != nil {
-		kLog.Debug(fmt.Sprintf("%v", err))
+		//kLog.Debug(fmt.Sprintf("%v", err))
 		return "", err
 	}
 	if isSmaller {
@@ -238,16 +246,19 @@ func isSmallerVersion(lhs, rhs string) (bool, error) {
 	var re *regexp.Regexp
 	var err error
 	re, err = regexp.Compile("v(\\d*)([^0-9]*)(\\d*)")
+	if err != nil {
+		kLog.Error(err)
+	}
 	lhsMatch := re.FindAllStringSubmatch(lhs, -1)
 	rhsMatch := re.FindAllStringSubmatch(rhs, -1)
 	lhsMajorVersion, err := getMajorVersion(lhsMatch)
 	if err != nil {
-		kLog.Debug(fmt.Sprintf("%v", err))
+		//kLog.Debug(fmt.Sprintf("%v", err))
 		return false, err
 	}
 	rhsMajorVersion,  err := getMajorVersion(rhsMatch)
 	if err != nil {
-		kLog.Debug(fmt.Sprintf("%v", err))
+		//kLog.Debug(fmt.Sprintf("%v", err))
 		return false, err
 	}
 	if lhsMajorVersion < rhsMajorVersion {
@@ -268,12 +279,12 @@ func isSmallerVersion(lhs, rhs string) (bool, error) {
 
 	lhsMinorVersion, err := getMinorVersion(lhsMatch)
 	if err != nil {
-		kLog.Debug(fmt.Sprintf("%v", err))
+		//kLog.Debug(fmt.Sprintf("%v", err))
 		return false, err
 	}
 	rhsMinorVersion, err := getMinorVersion(rhsMatch)
 	if err != nil {
-		kLog.Debug(fmt.Sprintf("%v", err))
+		//kLog.Debug(fmt.Sprintf("%v", err))
 		return false, err
 	}
 

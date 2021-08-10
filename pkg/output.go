@@ -15,7 +15,7 @@
  *
  */
 
-package kubedd
+package pkg
 
 import (
 	"bytes"
@@ -25,9 +25,6 @@ import (
 	"log"
 	"os"
 )
-
-// TODO (brendanryan) move these structs to `/log` once we have removed the potential
-// circular dependancy between this package and `/log`
 
 // outputManager controls how results of the `kubedd` evaluation will be recorded
 // and reported to the end user.

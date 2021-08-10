@@ -20,19 +20,18 @@ package pkg
 import (
 	"encoding/json"
 	"fmt"
-	kLog "github.com/devtron-labs/deprecation-checker/log"
+	"github.com/devtron-labs/deprecation-checker/pkg/log"
 	"github.com/getkin/kin-openapi/openapi3"
 	"regexp"
 	"sigs.k8s.io/yaml"
 	"strings"
 )
 
-
 func (ks *kubernetesSpec) ValidateYaml(spec string) error {
 	var err error
 	jsonSpec, err := yaml.YAMLToJSON([]byte(spec))
 	if err != nil {
-		kLog.Debug(fmt.Sprintf("%v", err))
+		log.Debug(fmt.Sprintf("%v", err))
 		return err
 	}
 	return ks.ValidateJson(string(jsonSpec))
@@ -43,27 +42,74 @@ func (ks *kubernetesSpec) ValidateJson(spec string) error {
 	object := make(map[string]interface{})
 	err = json.Unmarshal([]byte(spec), &object)
 	if err != nil {
-		kLog.Debug(fmt.Sprintf("%v", err))
+		log.Debug(fmt.Sprintf("%v", err))
 		return err
 	}
 	return ks.ValidateObject(object)
 }
 
 func (ks *kubernetesSpec) ValidateObject(object map[string]interface{}) error {
-	var err error
-	originalApiVersion := object["apiVersion"].(string)
-	apiVersion := object["apiVersion"].(string)
-	if len(apiVersion) == 0 || apiVersion == "v1" {
-		apiVersion = "core/v1"
+	var validationError openapi3.MultiError
+	original, latest, err := ks.getKindsMappings(object)
+	if err != nil {
+		return err
 	}
-	if len(originalApiVersion) == 0 {
-		originalApiVersion = "v1"
+	if len(original) > 0 {
+		validationError = ks.applySchema(object, original)
 	}
-	kind := object["kind"].(string)
-	token := fmt.Sprintf("io.k8s.api.%s.%s", strings.ReplaceAll(apiVersion, "/", "."), kind)
-	path := fmt.Sprintf("/apis/%s/%s", apiVersion, kind)
-	regexPath := fmt.Sprintf("/api(s)?/%s/.*/%s($|s|es)$", originalApiVersion, strings.ToLower(kind))
-	pathItem := ks.Paths.Find(strings.ToLower(path))
+	if len(latest) > 0 && original != latest {
+		ve := ks.applySchema(object, latest)
+		if ve != nil {
+			validationError = append(validationError, ve...)
+		}
+	}
+	return validationError
+}
+
+func (ks *kubernetesSpec) applySchema(object map[string]interface{}, token string) openapi3.MultiError {
+	var validationError openapi3.MultiError
+	dp, err := ks.Components.Schemas.JSONLookup(token)
+	if err != nil {
+		log.Debug(fmt.Sprintf("%v", err))
+		validationError = append(validationError, err)
+		return validationError
+	}
+	scm := dp.(*openapi3.Schema)
+	opts := []openapi3.SchemaValidationOption{openapi3.MultiErrors()}
+	depError := VisitJSON(token, scm, object, SchemaSettings{MultiError: true})
+	validationError = append(validationError, depError...)
+
+	err = scm.VisitJSON(object, opts...)
+	if err != nil {
+		e := err.(openapi3.MultiError)
+		validationError = append(validationError, e...)
+	}
+	return validationError
+}
+
+func (ks *kubernetesSpec) getKindsMappings(object map[string]interface{}) (original, latest string, err error) {
+	if object == nil {
+		return "", "", fmt.Errorf("missing k8s object")
+	}
+
+	apiVersionForRestAPI, ok := object["apiVersion"].(string)
+	apiVersionForComponents := apiVersionForRestAPI
+	if !ok || len(apiVersionForComponents) == 0 || apiVersionForComponents == "v1" {
+		apiVersionForComponents = "core/v1"
+	}
+	if !ok || len(apiVersionForRestAPI) == 0 {
+		apiVersionForRestAPI = "v1"
+	}
+	kind, ok := object["kind"].(string)
+	if !ok {
+		return "", "", fmt.Errorf("missing kind")
+	}
+
+	original = fmt.Sprintf("io.k8s.api.%s.%s", strings.ReplaceAll(apiVersionForComponents, "/", "."), kind)
+	//path := fmt.Sprintf("/apis/%s/%s", apiVersion, kind)
+	regexPath := fmt.Sprintf("/api(s)?/%s/.*/%s($|s|es)$", apiVersionForRestAPI, strings.ToLower(kind))
+	//pathItem := ks.Paths.Find(strings.ToLower(path))
+	var pathItem *openapi3.PathItem
 	re := regexp.MustCompile(regexPath)
 	for key, value := range ks.Paths {
 		if re.MatchString(key) && strings.Index(key, "watch") < 0 {
@@ -72,27 +118,11 @@ func (ks *kubernetesSpec) ValidateObject(object map[string]interface{}) error {
 	}
 	if pathItem == nil {
 		if _, ok := ks.kindMap[strings.ToLower(kind)]; !ok {
-			errorMsg := fmt.Sprintf("unsupported api - apiVersion: %s, kind: %s", apiVersion, kind)
-			kLog.Debug(errorMsg)
-			return fmt.Errorf(errorMsg)
+			errorMsg := fmt.Sprintf("unsupported api - apiVersion: %s, kind: %s", apiVersionForComponents, kind)
+			//kLog.Debug(errorMsg)
+			return "", "", fmt.Errorf(errorMsg)
 		}
-		token = ks.kindMap[strings.ToLower(kind)]
+		latest = ks.kindMap[strings.ToLower(kind)]
 	}
-	dp, err := ks.Components.Schemas.JSONLookup(token)
-	if err != nil {
-		kLog.Debug(fmt.Sprintf("%v", err))
-		return err
-	}
-	scm := dp.(*openapi3.Schema)
-	opts := []openapi3.SchemaValidationOption{openapi3.MultiErrors()}
-	depError := VisitJSON(path, scm, object, SchemaSettings{MultiError: true})
-
-	err = scm.VisitJSON(object, opts...)
-	if err != nil {
-		e := err.(openapi3.MultiError)
-		e = append(e, depError...)
-		//fmt.Println(e)
-		return e
-	}
-	return nil
+	return original, latest, nil
 }

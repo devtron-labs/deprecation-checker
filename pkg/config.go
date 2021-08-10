@@ -15,19 +15,12 @@
  *
  */
 
-package kubedd
+package pkg
 
 import (
 	"fmt"
-
 	"github.com/spf13/cobra"
 )
-
-// DefaultSchemaLocation is the default location to search for schemas
-const DefaultSchemaLocation = "https://kubernetesjsonschema.dev"
-
-// OpenShiftSchemaLocation is the alternative location for OpenShift specific schemas
-const OpenShiftSchemaLocation = "https://raw.githubusercontent.com/garethr/openshift-json-schema/master"
 
 // A Config object contains various configuration data for kubedd
 type Config struct {
