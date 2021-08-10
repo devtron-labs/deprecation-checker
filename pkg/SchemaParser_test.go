@@ -251,7 +251,7 @@ func TestDownloadFile(t *testing.T) {
 		{
 			name: "Positive - Test deployment extension",
 			args: args{releaseVersion: "1.16", object: extension_deployment},
-			wantErr: false,
+			wantErr: true,
 		},
 		{
 			name: "Positive - Test configmap",
