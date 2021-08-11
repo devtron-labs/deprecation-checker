@@ -106,8 +106,8 @@ func (k *kubeCheckerImpl) load(data []byte, releaseVersion string) error {
 		return err
 	}
 	kindMap := buildKindMap(openapi)
-	componentMap := buildComponentsMap(openapi)
-	pathMap := buildPathsMap(openapi)
+	componentMap := buildComponentMap(openapi)
+	pathMap := buildPathMap(openapi)
 	k.versionMap[releaseVersion] = &kubernetesSpec{T: openapi, kindMap: kindMap, componentMap: componentMap, pathMap: pathMap}
 	return nil
 }
@@ -189,7 +189,7 @@ func loadOpenApi2(data []byte) (*openapi3.T, error) {
 	return doc, nil
 }
 
-func buildComponentsMap(openapidoc *openapi3.T) map[string]string {
+func buildComponentMap(openapidoc *openapi3.T) map[string]string {
 	componentMap := map[string]string{}
 	for component, value := range openapidoc.Components.Schemas {
 		if gvk, ok := value.Value.Extensions["x-kubernetes-group-version-kind"]; ok {
@@ -197,22 +197,22 @@ func buildComponentsMap(openapidoc *openapi3.T) map[string]string {
 			if err != nil {
 				continue
 			}
-			fmt.Printf("%s - %v\n", component, gvks)
+			componentMap[gvks] = component
 		}
 	}
 	return componentMap
 }
 
-func buildPathsMap(openapidoc *openapi3.T) map[string]string {
-	componentMap := map[string]string{}
-	for component, value := range openapidoc.Paths {
+func buildPathMap(openapidoc *openapi3.T) map[string]string {
+	pathMap := map[string]string{}
+	for path, value := range openapidoc.Paths {
 		if value.Post != nil {
 			if gvk, ok := value.Post.Extensions["x-kubernetes-group-version-kind"]; ok {
 				gvks, err := getGVK(gvk.(json.RawMessage))
 				if err != nil {
 					continue
 				}
-				fmt.Printf("%s - %v\n", component, gvks)
+				pathMap[gvks] = path
 			}
 		} else if value.Put != nil {
 			if gvk, ok := value.Put.Extensions["x-kubernetes-group-version-kind"]; ok {
@@ -220,11 +220,11 @@ func buildPathsMap(openapidoc *openapi3.T) map[string]string {
 				if err != nil {
 					continue
 				}
-				fmt.Printf("%s - %v\n", component, gvks)
+				pathMap[gvks] = path
 			}
 		}
 	}
-	return componentMap
+	return pathMap
 }
 
 func getGVK(msg json.RawMessage) (string, error) {
@@ -236,13 +236,13 @@ func getGVK(msg json.RawMessage) (string, error) {
 			return "", fmt.Errorf("multiple x-kubernetes-group-version-kind hence skipping")
 		}
 		if len(arr) > 0 {
-			return fmt.Sprintf("%s/%s/%s", arr[0]["group"], arr[0]["version"], arr[0]["kind"]), nil
+			return strings.ToLower(fmt.Sprintf("%s/%s/%s", arr[0]["group"], arr[0]["version"], arr[0]["kind"])), nil
 		}
 	}
 	var m map[string]string
 	err = json.Unmarshal(msg, &m)
 	if err == nil {
-		return fmt.Sprintf("%s/%s/%s", m["group"], m["version"], m["kind"]), nil
+		return strings.ToLower(fmt.Sprintf("%s/%s/%s", m["group"], m["version"], m["kind"])), nil
 	}
 	return "", nil
 }

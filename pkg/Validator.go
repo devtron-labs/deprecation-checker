@@ -22,7 +22,6 @@ import (
 	"fmt"
 	"github.com/devtron-labs/deprecation-checker/pkg/log"
 	"github.com/getkin/kin-openapi/openapi3"
-	"regexp"
 	"sigs.k8s.io/yaml"
 	"strings"
 )
@@ -91,35 +90,23 @@ func (ks *kubernetesSpec) applySchema(object map[string]interface{}, token strin
 }
 
 func (ks *kubernetesSpec) getKindsMappings(object map[string]interface{}) (original, latest string, err error) {
+	original = ""
+	latest = ""
 	if object == nil {
 		return "", "", fmt.Errorf("missing k8s object")
 	}
-	apiVersionForRestAPI, ok := object["apiVersion"].(string)
-	apiVersionForComponents := apiVersionForRestAPI
-	if !ok || len(apiVersionForComponents) == 0 || apiVersionForComponents == "v1" {
-		apiVersionForComponents = "core/v1"
-	}
-	if !ok || len(apiVersionForRestAPI) == 0 {
-		apiVersionForRestAPI = "v1"
-	}
+	apiVersion, ok := object["apiVersion"].(string)
 	kind, ok := object["kind"].(string)
 	if !ok {
 		return "", "", fmt.Errorf("missing kind")
 	}
-
-	original = fmt.Sprintf("io.k8s.api.%s.%s", strings.ReplaceAll(apiVersionForComponents, "/", "."), kind)
-	regexPath := fmt.Sprintf("/api(s)?/%s/.*/%s($|s|es)$", apiVersionForRestAPI, strings.ToLower(kind))
-
-	var pathItem *openapi3.PathItem
-	re := regexp.MustCompile(regexPath)
-	for key, value := range ks.Paths {
-		if re.MatchString(key) && strings.Index(key, "watch") < 0 {
-			pathItem = value
+	gvk := strings.ToLower(fmt.Sprintf("%s/%s", apiVersion, kind))
+	if _, ok := ks.pathMap[gvk]; ok {
+		if component, ok := ks.componentMap[gvk]; ok {
+			original = component
 		}
 	}
-	if pathItem == nil {
-		original = ""
-	}
+
 	if _, ok := ks.kindMap[strings.ToLower(kind)]; !ok {
 		return original, "", nil
 	}
