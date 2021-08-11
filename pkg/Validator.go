@@ -63,6 +63,9 @@ func (ks *kubernetesSpec) ValidateObject(object map[string]interface{}) error {
 			validationError = append(validationError, ve...)
 		}
 	}
+	if len(validationError) == 0 {
+		return nil
+	}
 	return validationError
 }
 
@@ -91,7 +94,6 @@ func (ks *kubernetesSpec) getKindsMappings(object map[string]interface{}) (origi
 	if object == nil {
 		return "", "", fmt.Errorf("missing k8s object")
 	}
-
 	apiVersionForRestAPI, ok := object["apiVersion"].(string)
 	apiVersionForComponents := apiVersionForRestAPI
 	if !ok || len(apiVersionForComponents) == 0 || apiVersionForComponents == "v1" {
@@ -106,9 +108,8 @@ func (ks *kubernetesSpec) getKindsMappings(object map[string]interface{}) (origi
 	}
 
 	original = fmt.Sprintf("io.k8s.api.%s.%s", strings.ReplaceAll(apiVersionForComponents, "/", "."), kind)
-	//path := fmt.Sprintf("/apis/%s/%s", apiVersion, kind)
 	regexPath := fmt.Sprintf("/api(s)?/%s/.*/%s($|s|es)$", apiVersionForRestAPI, strings.ToLower(kind))
-	//pathItem := ks.Paths.Find(strings.ToLower(path))
+
 	var pathItem *openapi3.PathItem
 	re := regexp.MustCompile(regexPath)
 	for key, value := range ks.Paths {
@@ -117,12 +118,11 @@ func (ks *kubernetesSpec) getKindsMappings(object map[string]interface{}) (origi
 		}
 	}
 	if pathItem == nil {
-		if _, ok := ks.kindMap[strings.ToLower(kind)]; !ok {
-			errorMsg := fmt.Sprintf("unsupported api - apiVersion: %s, kind: %s", apiVersionForComponents, kind)
-			//kLog.Debug(errorMsg)
-			return "", "", fmt.Errorf(errorMsg)
-		}
-		latest = ks.kindMap[strings.ToLower(kind)]
+		original = ""
 	}
+	if _, ok := ks.kindMap[strings.ToLower(kind)]; !ok {
+		return original, "", nil
+	}
+	latest = ks.kindMap[strings.ToLower(kind)]
 	return original, latest, nil
 }

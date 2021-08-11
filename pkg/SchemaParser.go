@@ -20,6 +20,7 @@ package pkg
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	kLog "github.com/devtron-labs/deprecation-checker/pkg/log"
 	"github.com/getkin/kin-openapi/openapi2"
@@ -48,6 +49,8 @@ const (
 type kubernetesSpec struct {
 	*openapi3.T
 	kindMap map[string]string
+	componentMap map[string]string
+	pathMap map[string]string
 	config *Config
 }
 
@@ -56,6 +59,7 @@ type KubeChecker interface {
 	LoadFromPath(releaseVersion string, filePath string, force bool) error
 	ValidateJson(spec string, releaseVersion string) error
 	ValidateYaml(spec string, releaseVersion string) error
+	ValidateObject(spec map[string]interface{}, releaseVersion string) error
 }
 
 type kubeCheckerImpl struct {
@@ -80,14 +84,7 @@ func (k *kubeCheckerImpl) LoadFromPath(releaseVersion string, filePath string, f
 		//kLog.Debug(fmt.Sprintf("%v", err))
 		return err
 	}
-	openapi, err := loadOpenApi2(data)
-	if err != nil {
-		//kLog.Debug(fmt.Sprintf("%v", err))
-		return err
-	}
-	kindMap := buildKindMap(openapi)
-	k.versionMap[releaseVersion] = &kubernetesSpec{T: openapi, kindMap: kindMap}
-	return nil
+	return k.load(data, releaseVersion)
 }
 
 func (k *kubeCheckerImpl) LoadFromUrl(releaseVersion string, force bool) error {
@@ -99,13 +96,19 @@ func (k *kubeCheckerImpl) LoadFromUrl(releaseVersion string, force bool) error {
 		//kLog.Debug(fmt.Sprintf("%v", err))
 		return err
 	}
+	return k.load(data, releaseVersion)
+}
+
+func (k *kubeCheckerImpl) load(data []byte, releaseVersion string) error {
 	openapi, err := loadOpenApi2(data)
 	if err != nil {
 		//kLog.Debug(fmt.Sprintf("%v", err))
 		return err
 	}
 	kindMap := buildKindMap(openapi)
-	k.versionMap[releaseVersion] = &kubernetesSpec{T: openapi, kindMap: kindMap}
+	componentMap := buildComponentsMap(openapi)
+	pathMap := buildPathsMap(openapi)
+	k.versionMap[releaseVersion] = &kubernetesSpec{T: openapi, kindMap: kindMap, componentMap: componentMap, pathMap: pathMap}
 	return nil
 }
 
@@ -184,6 +187,64 @@ func loadOpenApi2(data []byte) (*openapi3.T, error) {
 		v.Value.AdditionalPropertiesAllowed = openapi3.BoolPtr(false)
 	}
 	return doc, nil
+}
+
+func buildComponentsMap(openapidoc *openapi3.T) map[string]string {
+	componentMap := map[string]string{}
+	for component, value := range openapidoc.Components.Schemas {
+		if gvk, ok := value.Value.Extensions["x-kubernetes-group-version-kind"]; ok {
+			gvks, err := getGVK(gvk.(json.RawMessage))
+			if err != nil {
+				continue
+			}
+			fmt.Printf("%s - %v\n", component, gvks)
+		}
+	}
+	return componentMap
+}
+
+func buildPathsMap(openapidoc *openapi3.T) map[string]string {
+	componentMap := map[string]string{}
+	for component, value := range openapidoc.Paths {
+		if value.Post != nil {
+			if gvk, ok := value.Post.Extensions["x-kubernetes-group-version-kind"]; ok {
+				gvks, err := getGVK(gvk.(json.RawMessage))
+				if err != nil {
+					continue
+				}
+				fmt.Printf("%s - %v\n", component, gvks)
+			}
+		} else if value.Put != nil {
+			if gvk, ok := value.Put.Extensions["x-kubernetes-group-version-kind"]; ok {
+				gvks, err := getGVK(gvk.(json.RawMessage))
+				if err != nil {
+					continue
+				}
+				fmt.Printf("%s - %v\n", component, gvks)
+			}
+		}
+	}
+	return componentMap
+}
+
+func getGVK(msg json.RawMessage) (string, error) {
+	var arr []map[string]string
+	err := json.Unmarshal(msg, &arr)
+	if err == nil {
+		if len(arr) > 1 {
+			fmt.Printf("len >1 for %v\n", arr)
+			return "", fmt.Errorf("multiple x-kubernetes-group-version-kind hence skipping")
+		}
+		if len(arr) > 0 {
+			return fmt.Sprintf("%s/%s/%s", arr[0]["group"], arr[0]["version"], arr[0]["kind"]), nil
+		}
+	}
+	var m map[string]string
+	err = json.Unmarshal(msg, &m)
+	if err == nil {
+		return fmt.Sprintf("%s/%s/%s", m["group"], m["version"], m["kind"]), nil
+	}
+	return "", nil
 }
 
 func buildKindMap(openapidoc *openapi3.T) map[string]string {

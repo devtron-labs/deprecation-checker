@@ -45,12 +45,6 @@ func visitJSON(key string, schema *openapi3.Schema, value interface{}, settings 
 			me = append(me, schemaError)
 		}
 		return me
-	//case bool:
-	//	return schema.visitJSONBoolean(settings, value)
-	//case float64:
-	//	return schema.visitJSONNumber(settings, value)
-	//case string:
-	//	return schema.visitJSONString(settings, value)
 	case []interface{}:
 		return visitJSONArray(key, schema, value, settings)
 	case map[string]interface{}:
