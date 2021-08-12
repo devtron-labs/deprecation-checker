@@ -110,6 +110,7 @@ var RootCmd = &cobra.Command{
 			}
 
 			for _, r := range results {
+				r.FileName = fileName
 				err := outputManager.Put(r)
 				if err != nil {
 					log.Error(err)

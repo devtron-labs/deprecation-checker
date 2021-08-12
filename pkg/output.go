@@ -22,6 +22,7 @@ import (
 	"encoding/json"
 	"fmt"
 	log2 "github.com/devtron-labs/deprecation-checker/pkg/log"
+	"github.com/getkin/kin-openapi/openapi3"
 	"log"
 	"os"
 )
@@ -72,16 +73,33 @@ func newSTDOutputManager() *STDOutputManager {
 }
 
 func (s *STDOutputManager) Put(result ValidationResult) error {
-	if len(result.Errors) > 0 {
-		for _, desc := range result.Errors {
-			log2.Warn(result.FileName, "contains an invalid", result.Kind, fmt.Sprintf("(%s)", result.QualifiedName()), "-", desc.String())
-		}
-	} else if result.Kind == "" {
+	openapi3.SchemaErrorDetailsDisabled = true
+	if result.Kind == "" {
 		log2.Success(result.FileName, "contains an empty YAML document")
 	} else if !result.ValidatedAgainstSchema {
 		log2.Warn(result.FileName, "containing a", result.Kind, fmt.Sprintf("(%s)", result.QualifiedName()), "was not validated against a schema")
-	} else {
+	} else if !result.Deleted && len(result.ErrorsForOriginal) == 0 {
 		log2.Success(result.FileName, "contains a valid", result.Kind, fmt.Sprintf("(%s)", result.QualifiedName()))
+	}
+
+	if len(result.LatestAPIVersion) > 0 {
+		if result.Deleted {
+			log2.Warn(result.FileName, "UNSUPPORTED - migrate", result.Kind, fmt.Sprintf("(%s)", result.QualifiedName()), "from apiVersion", result.APIVersion, "to apiVersion", result.LatestAPIVersion)
+		} else if result.Deprecated {
+			log2.Warn(result.FileName, "DEPRECATED - migrate", result.Kind, fmt.Sprintf("(%s)", result.QualifiedName()), "from apiVersion", result.APIVersion, "to apiVersion", result.LatestAPIVersion)
+		} else {
+			log2.Warn(result.FileName, "NEWER VERSION - migrate", result.Kind, fmt.Sprintf("(%s)", result.QualifiedName()), "from apiVersion", result.APIVersion, "to apiVersion", result.LatestAPIVersion)
+		}
+	}
+	if len(result.ErrorsForOriginal) > 0 {
+		for _, desc := range result.ErrorsForOriginal {
+			log2.Warn(result.FileName, "contains an invalid", result.Kind, fmt.Sprintf("(%s)", result.QualifiedName()), " - field - ", desc.SchemaField, " - ", desc.Error())
+		}
+	}
+	if len(result.ErrorsForLatest) > 0 {
+		for _, desc := range result.ErrorsForLatest {
+			log2.Warn(result.FileName, "contains an invalid", result.Kind, fmt.Sprintf("(%s)", result.QualifiedName()), " - field - ", desc.SchemaField, " - ", desc.Error())
+		}
 	}
 
 	return nil

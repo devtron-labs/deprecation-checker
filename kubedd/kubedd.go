@@ -46,13 +46,16 @@ func Validate(input []byte, conf *pkg.Config) ([]pkg.ValidationResult, error) {
 		}
 	}
 	splits := bytes.Split(input, yamlSeparator)
+	var validationResults []pkg.ValidationResult
 	for _, split := range splits {
-		err := kubeC.ValidateYaml(string(split), conf.KubernetesVersion)
+		validationResult, err := kubeC.ValidateYaml(string(split), conf.KubernetesVersion)
 		if err != nil {
 			fmt.Printf("err: %v\n", err)
+			continue
 		}
+		validationResults = append(validationResults, validationResult)
 	}
-	return []pkg.ValidationResult{}, nil
+	return validationResults, nil
 }
 
 func singleLineErrorFormat(es []error) string {

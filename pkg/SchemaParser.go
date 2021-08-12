@@ -41,25 +41,27 @@ const (
 	intOrStringPath   = "components.schemas.io\\.k8s\\.apimachinery\\.pkg\\.util\\.intstr\\.IntOrString"
 	intOrStringType   = `{"oneOf":[{"type": "string"},{"type": "integer"}]}`
 	intOrStringFormat = "definitions.io\\.k8s\\.apimachinery\\.pkg\\.util\\.intstr\\.IntOrString.format"
-	alphaVersion = 1
-	betaVersion = 2
-	gaVersion = 3
+	alphaVersion      = 1
+	betaVersion       = 2
+	gaVersion         = 3
+	gvFormat          = "%s/%s"
+	gvkFormat         = "%s/%s/%s"
 )
 
 type kubernetesSpec struct {
 	*openapi3.T
-	kindMap map[string]string
+	kindMap      map[string]string
 	componentMap map[string]string
-	pathMap map[string]string
-	config *Config
+	pathMap      map[string]string
+	config       *Config
 }
 
 type KubeChecker interface {
 	LoadFromUrl(releaseVersion string, force bool) error
 	LoadFromPath(releaseVersion string, filePath string, force bool) error
-	ValidateJson(spec string, releaseVersion string) error
-	ValidateYaml(spec string, releaseVersion string) error
-	ValidateObject(spec map[string]interface{}, releaseVersion string) error
+	ValidateJson(spec string, releaseVersion string) (ValidationResult, error)
+	ValidateYaml(spec string, releaseVersion string) (ValidationResult, error)
+	ValidateObject(spec map[string]interface{}, releaseVersion string) (ValidationResult, error)
 }
 
 type kubeCheckerImpl struct {
@@ -232,17 +234,44 @@ func getGVK(msg json.RawMessage) (string, error) {
 	err := json.Unmarshal(msg, &arr)
 	if err == nil {
 		if len(arr) > 1 {
-			fmt.Printf("len >1 for %v\n", arr)
+			//fmt.Printf("len >1 for %v\n", arr)
 			return "", fmt.Errorf("multiple x-kubernetes-group-version-kind hence skipping")
 		}
 		if len(arr) > 0 {
-			return strings.ToLower(fmt.Sprintf("%s/%s/%s", arr[0]["group"], arr[0]["version"], arr[0]["kind"])), nil
+			return getGVKFromMap(arr[0]), nil
 		}
 	}
 	var m map[string]string
 	err = json.Unmarshal(msg, &m)
 	if err == nil {
-		return strings.ToLower(fmt.Sprintf("%s/%s/%s", m["group"], m["version"], m["kind"])), nil
+		return getGVKFromMap(m), nil
+	}
+	return "", nil
+}
+
+func getGVKFromMap(gvkm map[string]string) string {
+	if g, ok := gvkm["group"]; ok && len(g) > 0 {
+		return strings.ToLower(fmt.Sprintf(gvkFormat, gvkm["group"], gvkm["version"], gvkm["kind"]))
+	} else {
+		return strings.ToLower(fmt.Sprintf(gvFormat, gvkm["version"], gvkm["kind"]))
+	}
+}
+
+func getGV(msg json.RawMessage) (string, error) {
+	var arr []map[string]string
+	err := json.Unmarshal(msg, &arr)
+	if err == nil {
+		if len(arr) > 1 {
+			return "", fmt.Errorf("multiple x-kubernetes-group-version-kind hence skipping")
+		}
+		if len(arr) > 0 {
+			return fmt.Sprintf(gvFormat, arr[0]["group"], arr[0]["version"]), nil
+		}
+	}
+	var m map[string]string
+	err = json.Unmarshal(msg, &m)
+	if err == nil {
+		return fmt.Sprintf(gvFormat, m["group"], m["version"]), nil
 	}
 	return "", nil
 }
@@ -317,7 +346,7 @@ func isSmallerVersion(lhs, rhs string) (bool, error) {
 		//kLog.Debug(fmt.Sprintf("%v", err))
 		return false, err
 	}
-	rhsMajorVersion,  err := getMajorVersion(rhsMatch)
+	rhsMajorVersion, err := getMajorVersion(rhsMatch)
 	if err != nil {
 		//kLog.Debug(fmt.Sprintf("%v", err))
 		return false, err
@@ -352,7 +381,7 @@ func isSmallerVersion(lhs, rhs string) (bool, error) {
 	if lhsMinorVersion <= rhsMinorVersion {
 		return true, nil
 	}
-	if  lhsMajorVersion > rhsMajorVersion {
+	if lhsMajorVersion > rhsMajorVersion {
 		return false, nil
 	}
 	return false, nil
@@ -380,27 +409,26 @@ func getVersionType(apiVersion string) int {
 	return gaVersion
 }
 
-func (k *kubeCheckerImpl) ValidateYaml(spec string, releaseVersion string) error {
+func (k *kubeCheckerImpl) ValidateYaml(spec string, releaseVersion string) (ValidationResult, error) {
 	err := k.LoadFromUrl(releaseVersion, false)
 	if err != nil {
-		return err
+		return ValidationResult{}, err
 	}
 	return k.versionMap[releaseVersion].ValidateYaml(spec)
 }
 
-func (k *kubeCheckerImpl) ValidateJson(spec string, releaseVersion string) error {
+func (k *kubeCheckerImpl) ValidateJson(spec string, releaseVersion string) (ValidationResult, error) {
 	err := k.LoadFromUrl(releaseVersion, false)
 	if err != nil {
-		return err
+		return ValidationResult{}, err
 	}
 	return k.versionMap[releaseVersion].ValidateJson(spec)
 }
 
-func (k *kubeCheckerImpl) ValidateObject(spec map[string]interface{}, releaseVersion string) error {
+func (k *kubeCheckerImpl) ValidateObject(spec map[string]interface{}, releaseVersion string) (ValidationResult, error) {
 	err := k.LoadFromUrl(releaseVersion, false)
 	if err != nil {
-		return err
+		return ValidationResult{}, err
 	}
 	return k.versionMap[releaseVersion].ValidateObject(spec)
 }
-

@@ -165,6 +165,54 @@ const svc = `
   }
 }`
 
+const svc_string_port = `
+{
+  "apiVersion": "v1",
+  "kind": "Service",
+  "metadata": {
+    "name": "my-service"
+  },
+  "spec": {
+    "selector": {
+      "app": "MyApp"
+    },
+    "ports": [
+      {
+        "protocol": "TCP",
+        "port": 80,
+        "targetPort": "app"
+      }
+    ]
+  }
+}`
+
+const redis_svc = `
+{
+  "apiVersion": "v1",
+  "kind": "Service",
+  "metadata": {
+    "name": "redis-master",
+    "labels": {
+      "app": "redis",
+      "tier": "backend",
+      "role": "master"
+    }
+  },
+  "spec": {
+    "ports": [
+      {
+        "port": "sds",
+        "targetPort": 6379
+      }
+    ],
+    "selector": {
+      "app": "redis",
+      "tier": "backend",
+      "role": "master"
+    }
+  }
+}`
+
 const cm =`
 {
   "apiVersion": "v1",
@@ -244,6 +292,16 @@ func TestDownloadFile(t *testing.T) {
 			wantErr: false,
 		},
 		{
+			name: "Negative - Test Service",
+			args: args{releaseVersion: "1.20", object: redis_svc},
+			wantErr: true,
+		},
+		{
+			name: "Positive - Test Service",
+			args: args{releaseVersion: "1.20", object: svc_string_port},
+			wantErr: false,
+		},
+		{
 			name: "Positive - Test deployment extension, handled via apps/v1",
 			args: args{releaseVersion: "1.18", object: extension_deployment},
 			wantErr: true,
@@ -274,7 +332,7 @@ func TestDownloadFile(t *testing.T) {
 			kc := NewKubeCheckerImpl()
 			var err error
 			err = kc.LoadFromUrl(tt.args.releaseVersion, false)
-			err = kc.ValidateJson(tt.args.object, tt.args.releaseVersion)
+			_, err = kc.ValidateJson(tt.args.object, tt.args.releaseVersion)
 			//fmt.Println(string(got))
 			if (err != nil) != tt.wantErr {
 				t.Errorf("DownloadFile() error = %v, wantErr %v", err, tt.wantErr)

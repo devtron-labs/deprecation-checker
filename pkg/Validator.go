@@ -26,59 +26,114 @@ import (
 	"strings"
 )
 
-func (ks *kubernetesSpec) ValidateYaml(spec string) error {
+func (ks *kubernetesSpec) ValidateYaml(spec string) (ValidationResult, error) {
 	var err error
 	jsonSpec, err := yaml.YAMLToJSON([]byte(spec))
 	if err != nil {
 		log.Debug(fmt.Sprintf("%v", err))
-		return err
+		return ValidationResult{}, err
 	}
 	return ks.ValidateJson(string(jsonSpec))
 }
 
-func (ks *kubernetesSpec) ValidateJson(spec string) error {
+func (ks *kubernetesSpec) ValidateJson(spec string) (ValidationResult, error) {
 	var err error
 	object := make(map[string]interface{})
 	err = json.Unmarshal([]byte(spec), &object)
 	if err != nil {
 		log.Debug(fmt.Sprintf("%v", err))
-		return err
+		return ValidationResult{}, err
 	}
 	return ks.ValidateObject(object)
 }
 
-func (ks *kubernetesSpec) ValidateObject(object map[string]interface{}) error {
-	var validationError openapi3.MultiError
+func (ks *kubernetesSpec) ValidateObject(object map[string]interface{}) (ValidationResult, error) {
+	validationResult, err := ks.populateValidationResult(object)
+	validationResult.ValidatedAgainstSchema = true
+	if err != nil {
+		return validationResult, err
+	}
 	original, latest, err := ks.getKindsMappings(object)
 	if err != nil {
-		return err
+		return validationResult, err
 	}
 	if len(original) > 0 {
-		validationError = ks.applySchema(object, original)
+		var ves []*openapi3.SchemaError
+		validationError, deprecated := ks.applySchema(object, original)
+		if validationError != nil && len(validationError) > 0 {
+			errs := []error(validationError)
+			for _, e := range errs {
+				if se, ok := e.(*openapi3.SchemaError); ok {
+					ves = append(ves, se)
+				}
+			}
+		}
+		validationResult.ErrorsForOriginal = ves
+		validationResult.Deprecated = deprecated
+	} else {
+		validationResult.Deleted = true
 	}
 	if len(latest) > 0 && original != latest {
-		ve := ks.applySchema(object, latest)
-		if ve != nil {
-			validationError = append(validationError, ve...)
+		var ves []*openapi3.SchemaError
+		validationError, _ := ks.applySchema(object, latest)
+		if validationError != nil && len(validationError) > 0 {
+			errs := []error(validationError)
+			for _, e := range errs {
+				if se, ok := e.(*openapi3.SchemaError); ok {
+					ves = append(ves, se)
+				}
+			}
 		}
+		validationResult.ErrorsForLatest = ves
+		validationResult.LatestAPIVersion, err = ks.getGVFromToken(latest)
 	}
-	if len(validationError) == 0 {
-		return nil
-	}
-	return validationError
+	return validationResult, nil
 }
 
-func (ks *kubernetesSpec) applySchema(object map[string]interface{}, token string) openapi3.MultiError {
+func (ks *kubernetesSpec) populateValidationResult(object map[string]interface{}) (ValidationResult, error) {
+	validationResult := ValidationResult{}
+	namespace := "undefined"
+	if object == nil {
+		return validationResult, fmt.Errorf("missing k8s object")
+	}
+	apiVersion, ok := object["apiVersion"].(string)
+	kind, ok := object["kind"].(string)
+	if !ok {
+		return validationResult, fmt.Errorf("missing kind")
+	}
+	metadata, ok := object["metadata"].(map[string]interface{})
+	if !ok {
+		return validationResult, fmt.Errorf("missing metadata")
+	}
+	if ns, ok := metadata["namespace"]; ok {
+		namespace = ns.(string)
+	}
+	name, ok := metadata["name"].(string)
+	if !ok {
+		return validationResult, fmt.Errorf("missing resource name")
+	}
+	validationResult.Kind = kind
+	validationResult.APIVersion = apiVersion
+	validationResult.ResourceNamespace = namespace
+	validationResult.ResourceName = name
+	return validationResult, nil
+}
+
+func (ks *kubernetesSpec) applySchema(object map[string]interface{}, token string) (openapi3.MultiError, bool) {
+	deprecated := false
 	var validationError openapi3.MultiError
 	dp, err := ks.Components.Schemas.JSONLookup(token)
 	if err != nil {
 		log.Debug(fmt.Sprintf("%v", err))
 		validationError = append(validationError, err)
-		return validationError
+		return validationError, deprecated
 	}
 	scm := dp.(*openapi3.Schema)
 	opts := []openapi3.SchemaValidationOption{openapi3.MultiErrors()}
 	depError := VisitJSON(token, scm, object, SchemaSettings{MultiError: true})
+	if len(depError) > 0 {
+		deprecated = true
+	}
 	validationError = append(validationError, depError...)
 
 	err = scm.VisitJSON(object, opts...)
@@ -86,7 +141,20 @@ func (ks *kubernetesSpec) applySchema(object map[string]interface{}, token strin
 		e := err.(openapi3.MultiError)
 		validationError = append(validationError, e...)
 	}
-	return validationError
+	return validationError, deprecated
+}
+
+func (ks *kubernetesSpec) getGVFromToken(token string) (string, error) {
+	dp, err := ks.Components.Schemas.JSONLookup(token)
+	if err != nil {
+		return "", err
+	}
+	scm := dp.(*openapi3.Schema)
+	gv, err := getGV(scm.Extensions["x-kubernetes-group-version-kind"].(json.RawMessage))
+	if err != nil {
+		return "", err
+	}
+	return gv, nil
 }
 
 func (ks *kubernetesSpec) getKindsMappings(object map[string]interface{}) (original, latest string, err error) {
