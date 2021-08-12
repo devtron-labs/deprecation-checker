@@ -101,6 +101,16 @@ func (s *STDOutputManager) Put(result ValidationResult) error {
 			log2.Warn(result.FileName, "contains an invalid", result.Kind, fmt.Sprintf("(%s)", result.QualifiedName()), " - field - ", desc.SchemaField, " - ", desc.Error())
 		}
 	}
+	if len(result.DeprecationForOriginal) > 0 {
+		for _, desc := range result.DeprecationForOriginal {
+			log2.Warn(result.FileName, "contains an invalid", result.Kind, fmt.Sprintf("(%s)", result.QualifiedName()), " - field - ", desc.SchemaField, " - ", desc.Error())
+		}
+	}
+	if len(result.DeprecationForLatest) > 0 {
+		for _, desc := range result.DeprecationForLatest {
+			log2.Warn(result.FileName, "contains an invalid", result.Kind, fmt.Sprintf("(%s)", result.QualifiedName()), " - field - ", desc.SchemaField, " - ", desc.Error())
+		}
+	}
 
 	return nil
 }

@@ -381,6 +381,15 @@ func Test_compareVersion(t *testing.T) {
 			wantErr: false,
 		},
 		{
+			name: "compare APIService",
+			args: args{
+				first:  "apiregistration.k8s.io.v1beta1.APIService",
+				second: "apiregistration.k8s.io.v1alpha1.APIService",
+			},
+			want: "apiregistration.k8s.io.v1beta1.APIService",
+			wantErr: false,
+		},
+		{
 			name: "compare deployment",
 			args: args{
 				first:  "io.k8s.api.extensions.v1alpha1.Deployment",

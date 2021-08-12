@@ -59,32 +59,42 @@ func (ks *kubernetesSpec) ValidateObject(object map[string]interface{}) (Validat
 	}
 	if len(original) > 0 {
 		var ves []*openapi3.SchemaError
+		var des []*SchemaError
 		validationError, deprecated := ks.applySchema(object, original)
 		if validationError != nil && len(validationError) > 0 {
 			errs := []error(validationError)
 			for _, e := range errs {
+				//TODO: handle error of type SchemaError along with openapi3.SchemaError
 				if se, ok := e.(*openapi3.SchemaError); ok {
 					ves = append(ves, se)
+				} else if de, ok := e.(*SchemaError); ok {
+					des = append(des, de)
 				}
 			}
 		}
 		validationResult.ErrorsForOriginal = ves
+		validationResult.DeprecationForOriginal = des
 		validationResult.Deprecated = deprecated
 	} else {
 		validationResult.Deleted = true
 	}
 	if len(latest) > 0 && original != latest {
 		var ves []*openapi3.SchemaError
+		var des []*SchemaError
 		validationError, _ := ks.applySchema(object, latest)
 		if validationError != nil && len(validationError) > 0 {
 			errs := []error(validationError)
 			for _, e := range errs {
+				//TODO: handle error of type SchemaError along with openapi3.SchemaError
 				if se, ok := e.(*openapi3.SchemaError); ok {
 					ves = append(ves, se)
+				} else if de, ok := e.(*SchemaError); ok {
+					des = append(des, de)
 				}
 			}
 		}
 		validationResult.ErrorsForLatest = ves
+		validationResult.DeprecationForLatest = des
 		validationResult.LatestAPIVersion, err = ks.getGVFromToken(latest)
 	}
 	return validationResult, nil
