@@ -18,7 +18,6 @@
 package pkg
 
 import (
-	"fmt"
 	"github.com/getkin/kin-openapi/openapi3"
 	"strings"
 )
@@ -27,11 +26,11 @@ type SchemaSettings struct {
 	MultiError bool
 }
 
-func VisitJSON(key string, schema *openapi3.Schema, value interface{}, settings SchemaSettings) openapi3.MultiError {
-	return visitJSON(key, schema, value, settings)
+func VisitJSON(schema *openapi3.Schema, value interface{}, settings SchemaSettings) openapi3.MultiError {
+	return visitJSON(schema, value, settings)
 }
 
-func visitJSON(key string, schema *openapi3.Schema, value interface{}, settings SchemaSettings) openapi3.MultiError {
+func visitJSON(schema *openapi3.Schema, value interface{}, settings SchemaSettings) openapi3.MultiError {
 	var me openapi3.MultiError
 	switch value := value.(type) {
 	case nil, bool, float64, string, int64:
@@ -39,46 +38,44 @@ func visitJSON(key string, schema *openapi3.Schema, value interface{}, settings 
 			schemaError := &SchemaError{
 				Value:       "",
 				Schema:      schema,
-				SchemaField: key,
 				Reason:      schema.Description,
 			}
 			me = append(me, schemaError)
 		}
 		return me
 	case []interface{}:
-		return visitJSONArray(key, schema, value, settings)
+		return visitJSONArray(schema, value, settings)
 	case map[string]interface{}:
-		return visitJSONObject(key, schema, value, settings)
+		return visitJSONObject(schema, value, settings)
 	default:
 		schemaError := &SchemaError{
 			Value:       value,
 			Schema:      schema,
-			SchemaField: key,
-			Reason:      fmt.Sprintf("unhandled key %s", key),
+			Reason:      "unhandled key",
 		}
 		me = append(me, schemaError)
 		return me
 	}
 }
 
-func visitJSONArray(key string, schema *openapi3.Schema, object []interface{}, settings SchemaSettings) openapi3.MultiError {
+func visitJSONArray(schema *openapi3.Schema, object []interface{}, settings SchemaSettings) openapi3.MultiError {
 	var me openapi3.MultiError
-	for _, obj := range object {
-		schemaError := visitJSON(key, schema.Items.Value, obj, settings)
+	for i, obj := range object {
+		schemaError := visitJSON(schema.Items.Value, obj, settings)
 		if len(schemaError) != 0 {
+			markSchemaErrorIndex(schemaError, i)
 			me = append(me, schemaError...)
 		}
 	}
 	return me
 }
 
-func visitJSONObject(key string, schema *openapi3.Schema, object map[string]interface{}, settings SchemaSettings) openapi3.MultiError {
+func visitJSONObject(schema *openapi3.Schema, object map[string]interface{}, settings SchemaSettings) openapi3.MultiError {
 	var me openapi3.MultiError
 	if strings.Index(strings.ToLower(schema.Description), "deprecated") >= 0 {
 		schemaError := &SchemaError{
 			Value:       "",
 			Schema:      schema,
-			SchemaField: key,
 			Reason:      schema.Description,
 		}
 		me = append(me, schemaError)
@@ -89,8 +86,9 @@ func visitJSONObject(key string, schema *openapi3.Schema, object map[string]inte
 	for k, v := range object {
 		if s, ok := schema.Properties[k]; ok {
 			//fmt.Printf("found key %s\n", k)
-			schemaError := visitJSON(k, s.Value, v, settings)
+			schemaError := visitJSON(s.Value, v, settings)
 			if len(schemaError) != 0 {
+				markSchemaErrorKey(schemaError, k)
 				me = append(me, schemaError...)
 				if !settings.MultiError {
 					return me

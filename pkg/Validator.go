@@ -140,7 +140,7 @@ func (ks *kubernetesSpec) applySchema(object map[string]interface{}, token strin
 	}
 	scm := dp.(*openapi3.Schema)
 	opts := []openapi3.SchemaValidationOption{openapi3.MultiErrors()}
-	depError := VisitJSON(token, scm, object, SchemaSettings{MultiError: true})
+	depError := VisitJSON(scm, object, SchemaSettings{MultiError: true})
 	if len(depError) > 0 {
 		deprecated = true
 	}
