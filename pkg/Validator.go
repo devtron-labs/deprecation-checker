@@ -75,7 +75,7 @@ func (ks *kubernetesSpec) ValidateObject(object map[string]interface{}) (Validat
 		validationResult.ErrorsForOriginal = ves
 		validationResult.DeprecationForOriginal = des
 		validationResult.Deprecated = deprecated
-	} else {
+	} else if len(original) == 0 && len(latest) > 0 {
 		validationResult.Deleted = true
 	}
 	if len(latest) > 0 && original != latest {
