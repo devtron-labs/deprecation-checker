@@ -91,8 +91,10 @@ func (s *STDOutputManager) PutBulk(results []ValidationResult) error {
 			continue
 		}else if result.Deleted {
 			deleted = append(deleted, result)
-		} else if result.Deprecated && len(result.APIVersion) > 0 {
+		} else if result.Deprecated && len(result.LatestAPIVersion) > 0 {
 			deprecated = append(deprecated, result)
+		} else if result.Deprecated {
+			//Skip
 		} else if len(result.LatestAPIVersion) > 0 {
 			newerVersion = append(newerVersion, result)
 		} else {
