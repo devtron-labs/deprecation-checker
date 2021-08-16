@@ -110,54 +110,10 @@ var RootCmd = &cobra.Command{
 			}
 
 			fmt.Println("")
-			fmt.Println("###########################################")
 			fmt.Printf("Results for file %s\n", fileName)
-			fmt.Println("###########################################")
-			var deleted []pkg.ValidationResult
-			var deprecated []pkg.ValidationResult
-			var newerVersion []pkg.ValidationResult
-			var success []pkg.ValidationResult
+			fmt.Println("-------------------------------------------")
 
-			for _, result := range results {
-				if result.Deleted {
-					deleted = append(deleted, result)
-				} else if result.Deprecated {
-					deprecated = append(deprecated, result)
-				} else if len(result.LatestAPIVersion) > 0 {
-					newerVersion = append(newerVersion, result)
-				} else {
-					success = append(success, result)
-				}
-			}
-			if len(deleted) > 0 {
-				//fmt.Println("###########################################")
-				fmt.Println("Removed API Version's")
-				//fmt.Println("###########################################")
-				fmt.Println("-------------------------------------------")
-			}
-			printResult(fileName, deleted, outputManager)
-			if len(deprecated) > 0 {
-				//fmt.Println("###########################################")
-				fmt.Println("Deprecated API Version's")
-				//fmt.Println("###########################################")
-				fmt.Println("-------------------------------------------")
-			}
-			printResult(fileName, deprecated, outputManager)
-			if len(newerVersion) > 0 {
-				//fmt.Println("###########################################")
-				fmt.Println("Newer API Version's")
-				//fmt.Println("###########################################")
-				fmt.Println("-------------------------------------------")
-			}
-			printResult(fileName, newerVersion, outputManager)
-			if len(success) > 0 {
-				//fmt.Println("###########################################")
-				fmt.Println("No Changes in API Version's")
-				//fmt.Println("###########################################")
-				fmt.Println("-------------------------------------------")
-			}
-			printResult(fileName, success, outputManager)
-
+			outputManager.PutBulk(results)
 
 			aggResults = append(aggResults, results...)
 		}
@@ -178,16 +134,6 @@ var RootCmd = &cobra.Command{
 	},
 }
 
-func printResult(fileName string, results []pkg.ValidationResult, outputManager pkg.OutputManager) {
-	for _, r := range results {
-		r.FileName = fileName
-		err := outputManager.Put(r)
-		if err != nil {
-			log.Error(err)
-			os.Exit(1)
-		}
-	}
-}
 
 // hasErrors returns truthy if any of the provided results
 // contain errors.

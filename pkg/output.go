@@ -21,12 +21,14 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	log2 "github.com/devtron-labs/deprecation-checker/pkg/log"
+	kLog "github.com/devtron-labs/deprecation-checker/pkg/log"
 	"github.com/getkin/kin-openapi/openapi3"
-	"github.com/olekukonko/tablewriter"
+	"strings"
+
+	//"github.com/olekukonko/tablewriter"
+	"github.com/tomlazar/table"
 	"log"
 	"os"
-	"strings"
 )
 
 // OutputManager controls how results of the `kubedd` evaluation will be recorded
@@ -34,6 +36,7 @@ import (
 // This interface is kept private to ensure all implementations are closed within
 // this package.
 type OutputManager interface {
+	PutBulk(r []ValidationResult) error
 	Put(r ValidationResult) error
 	Flush() error
 }
@@ -74,50 +77,191 @@ func newSTDOutputManager() *STDOutputManager {
 	return &STDOutputManager{}
 }
 
-func (s *STDOutputManager) Put(result ValidationResult) error {
-	tablewriter.NewWriter(os.Stdout)
-	openapi3.SchemaErrorDetailsDisabled = true
-	if result.Kind == "" {
-		log2.Success(result.FileName, "contains an empty YAML document")
-	} else if !result.ValidatedAgainstSchema {
-		log2.Warn(result.FileName, "containing a", result.Kind, fmt.Sprintf("(%s)", result.QualifiedName()), "was not validated against a schema")
-	} else if !result.Deleted && len(result.ErrorsForOriginal) == 0 {
-		log2.Success(result.Kind, fmt.Sprintf("(%s)", result.QualifiedName()))
+func (s *STDOutputManager) PutBulk(results []ValidationResult) error {
+	if len(results) == 0 {
+		return nil
+	}
+	var deleted []ValidationResult
+	var deprecated []ValidationResult
+	var newerVersion []ValidationResult
+	var unchanged []ValidationResult
+
+	for _, result := range results {
+		if len(result.Kind) == 0 {
+			continue
+		}else if result.Deleted {
+			deleted = append(deleted, result)
+		} else if result.Deprecated && len(result.APIVersion) > 0 {
+			deprecated = append(deprecated, result)
+		} else if len(result.LatestAPIVersion) > 0 {
+			newerVersion = append(newerVersion, result)
+		} else {
+			unchanged = append(unchanged, result)
+		}
+	}
+	if len(deleted) > 0 {
+		kLog.Error(fmt.Errorf("Removed API Version's"))
+		s.SummaryTableBodyOutput(deleted)
+		fmt.Println("")
+		s.DeprecationTableBodyOutput(results, false)
+		s.ValidationErrorTableBodyOutput(results, true)
+	}
+	if len(deprecated) > 0 {
+		kLog.Warn("Deprecated API Version's")
+		s.SummaryTableBodyOutput(deprecated)
+		fmt.Println("")
+		//s.DeprecationTableBodyOutput(results, true)
+		s.ValidationErrorTableBodyOutput(results, true)
+		s.DeprecationTableBodyOutput(results, false)
+		s.ValidationErrorTableBodyOutput(results, false)
+	}
+	if len(newerVersion) > 0 {
+		kLog.Warn("Newer Versions available")
+		s.SummaryTableBodyOutput(newerVersion)
+		fmt.Println("")
+		s.DeprecationTableBodyOutput(results, true)
+		s.ValidationErrorTableBodyOutput(results, true)
+		s.DeprecationTableBodyOutput(results, false)
+		s.ValidationErrorTableBodyOutput(results, false)
+	}
+	if len(unchanged) > 0 {
+		kLog.Warn("Unchanged API Version's")
+		//s.SummaryTableBodyOutput(unchanged)
+		s.DeprecationTableBodyOutput(results, true)
+		s.ValidationErrorTableBodyOutput(results, true)
 	}
 
-	if len(result.LatestAPIVersion) > 0 {
-		if result.Deleted {
-			log2.Warn(result.Kind, fmt.Sprintf("(%s)", result.QualifiedName()), result.APIVersion, result.LatestAPIVersion)
-		} else if result.Deprecated {
-			log2.Warn(result.Kind, fmt.Sprintf("(%s)", result.QualifiedName()), result.APIVersion, result.LatestAPIVersion)
-		} else {
-			log2.Warn(result.Kind, fmt.Sprintf("(%s)", result.QualifiedName()), result.APIVersion, result.LatestAPIVersion)
+	return nil
+}
+
+func (s *STDOutputManager) SummaryTableBodyOutput(results []ValidationResult) {
+	t := table.Table{Headers: []string{"Namespace", "Name", "Kind", "API Version", "Replace With API Version"}}
+	c := table.DefaultConfig()
+	c.ShowIndex = false
+	for _, result := range results {
+		t.Rows = append(t.Rows, []string{result.ResourceNamespace, result.ResourceName, result.Kind, result.APIVersion, result.LatestAPIVersion})
+	}
+	t.WriteTable(os.Stdout, c)
+}
+
+func (s *STDOutputManager) DeprecationTableBodyOutput(results []ValidationResult, currentVersion bool) {
+	hasData := false
+	for _, result := range results {
+		errors := result.DeprecationForLatest
+		if currentVersion {
+			errors = result.DeprecationForOriginal
+		}
+		if len(errors) > 0 {
+			for _, e := range errors {
+				if len(e.JSONPointer()) > 0 {
+					hasData = true
+					break
+				}
+			}
 		}
 	}
-	if len(result.DeprecationForOriginal) > 0 {
-		fmt.Printf("Deprecations for %s %s %s\n", result.APIVersion, result.Kind, fmt.Sprintf("(%s)", result.QualifiedName()))
-		for _, desc := range result.DeprecationForOriginal {
-			log2.Warn(result.Kind, fmt.Sprintf("(%s)", result.QualifiedName()), strings.Join(desc.JSONPointer(), "/"), desc.Reason)
+	if !hasData {
+		return
+	}
+	t := table.Table{Headers: []string{"Namespace", "Name", "Kind", "API Version", "Field", "Reason"}}
+	c := table.DefaultConfig()
+	c.ShowIndex = false
+	for _, result := range results {
+		errors := result.DeprecationForLatest
+		apiVersion := result.LatestAPIVersion
+		if currentVersion {
+			apiVersion = result.APIVersion
+			errors = result.DeprecationForOriginal
+		}
+		for _, e := range errors {
+			t.Rows = append(t.Rows, []string{result.ResourceNamespace, result.ResourceName, result.Kind, apiVersion, strings.Join(e.JSONPointer(), "/"), e.Reason})
 		}
 	}
-	if len(result.ErrorsForOriginal) > 0 {
-		fmt.Printf("Validation error for %s %s %s\n", result.APIVersion, result.Kind, fmt.Sprintf("(%s)", result.QualifiedName()))
-		for _, desc := range result.ErrorsForOriginal {
-			log2.Warn(result.Kind, fmt.Sprintf("(%s)", result.QualifiedName()), strings.Join(desc.JSONPointer(), "/"), desc.Reason)
+	t.WriteTable(os.Stdout, c)
+}
+
+func (s *STDOutputManager) ValidationErrorTableBodyOutput(results []ValidationResult, currentVersion bool) {
+	hasData := false
+	for _, result := range results {
+		errors := result.ErrorsForLatest
+		if currentVersion {
+			errors = result.ErrorsForOriginal
+		}
+		if len(errors) > 0 {
+			for _, e := range errors {
+				if len(e.JSONPointer()) > 0 {
+					hasData = true
+					break
+				}
+			}
 		}
 	}
-	if len(result.DeprecationForLatest) > 0 {
-		fmt.Printf("Deprecations for %s %s %s\n", result.LatestAPIVersion, result.Kind, fmt.Sprintf("(%s)", result.QualifiedName()))
-		for _, desc := range result.DeprecationForLatest {
-			log2.Warn(result.Kind, fmt.Sprintf("(%s)", result.QualifiedName()), strings.Join(desc.JSONPointer(), "/"), desc.Reason)
+	if !hasData {
+		return
+	}
+	t := table.Table{Headers: []string{"Namespace", "Name", "Kind", "API Version", "Field", "Reason"}}
+	c := table.DefaultConfig()
+	c.ShowIndex = false
+	for _, result := range results {
+		errors := result.ErrorsForLatest
+		apiVersion := result.LatestAPIVersion
+		if currentVersion {
+			apiVersion = result.APIVersion
+			errors = result.ErrorsForOriginal
+		}
+		for _, e := range errors {
+			if len(e.JSONPointer()) > 0 {
+				t.Rows = append(t.Rows, []string{result.ResourceNamespace, result.ResourceName, result.Kind, apiVersion, strings.Join(e.JSONPointer(), "/"), e.Reason})
+			}
 		}
 	}
-	if len(result.ErrorsForLatest) > 0 {
-		fmt.Printf("Validation error for %s %s %s\n", result.LatestAPIVersion, result.Kind, fmt.Sprintf("(%s)", result.QualifiedName()))
-		for _, desc := range result.ErrorsForLatest {
-			log2.Warn(result.Kind, fmt.Sprintf("(%s)", result.QualifiedName()), strings.Join(desc.JSONPointer(), "/"), desc.Reason)
-		}
-	}
+	t.WriteTable(os.Stdout, c)
+}
+
+func (s *STDOutputManager) Put(result ValidationResult) error {
+	openapi3.SchemaErrorDetailsDisabled = true
+	//s.TableOutput(result)
+	//if result.Kind == "" {
+	//	log2.Success(result.FileName, "contains an empty YAML document")
+	//} else if !result.ValidatedAgainstSchema {
+	//	log2.Warn(result.FileName, "containing a", result.Kind, fmt.Sprintf("(%s)", result.QualifiedName()), "was not validated against a schema")
+	//} else if !result.Deleted && len(result.ErrorsForOriginal) == 0 {
+	//	log2.Success(result.Kind, fmt.Sprintf("(%s)", result.QualifiedName()))
+	//}
+	//
+	//if len(result.LatestAPIVersion) > 0 {
+	//	if result.Deleted {
+	//		log2.Warn(result.Kind, fmt.Sprintf("(%s)", result.QualifiedName()), result.APIVersion, result.LatestAPIVersion)
+	//	} else if result.Deprecated {
+	//		log2.Warn(result.Kind, fmt.Sprintf("(%s)", result.QualifiedName()), result.APIVersion, result.LatestAPIVersion)
+	//	} else {
+	//		log2.Warn(result.Kind, fmt.Sprintf("(%s)", result.QualifiedName()), result.APIVersion, result.LatestAPIVersion)
+	//	}
+	//}
+	//if len(result.DeprecationForOriginal) > 0 {
+	//	fmt.Printf("Deprecations for %s %s %s\n", result.APIVersion, result.Kind, fmt.Sprintf("(%s)", result.QualifiedName()))
+	//	for _, desc := range result.DeprecationForOriginal {
+	//		log2.Warn(result.Kind, fmt.Sprintf("(%s)", result.QualifiedName()), strings.Join(desc.JSONPointer(), "/"), desc.Reason)
+	//	}
+	//}
+	//if len(result.ErrorsForOriginal) > 0 {
+	//	fmt.Printf("Validation error for %s %s %s\n", result.APIVersion, result.Kind, fmt.Sprintf("(%s)", result.QualifiedName()))
+	//	for _, desc := range result.ErrorsForOriginal {
+	//		log2.Warn(result.Kind, fmt.Sprintf("(%s)", result.QualifiedName()), strings.Join(desc.JSONPointer(), "/"), desc.Reason)
+	//	}
+	//}
+	//if len(result.DeprecationForLatest) > 0 {
+	//	fmt.Printf("Deprecations for %s %s %s\n", result.LatestAPIVersion, result.Kind, fmt.Sprintf("(%s)", result.QualifiedName()))
+	//	for _, desc := range result.DeprecationForLatest {
+	//		log2.Warn(result.Kind, fmt.Sprintf("(%s)", result.QualifiedName()), strings.Join(desc.JSONPointer(), "/"), desc.Reason)
+	//	}
+	//}
+	//if len(result.ErrorsForLatest) > 0 {
+	//	fmt.Printf("Validation error for %s %s %s\n", result.LatestAPIVersion, result.Kind, fmt.Sprintf("(%s)", result.QualifiedName()))
+	//	for _, desc := range result.ErrorsForLatest {
+	//		log2.Warn(result.Kind, fmt.Sprintf("(%s)", result.QualifiedName()), strings.Join(desc.JSONPointer(), "/"), desc.Reason)
+	//	}
+	//}
 
 	return nil
 }
@@ -175,6 +319,10 @@ func getStatus(r ValidationResult) status {
 	return statusValid
 }
 
+func (j *jsonOutputManager) PutBulk(r []ValidationResult) error {
+	return nil
+}
+
 func (j *jsonOutputManager) Put(r ValidationResult) error {
 	// stringify gojsonschema errors
 	// use a pre-allocated slice to ensure the json will have an
@@ -229,6 +377,10 @@ func newTAPOutputManager(l *log.Logger) *tapOutputManager {
 	return &tapOutputManager{
 		logger: l,
 	}
+}
+
+func (j *tapOutputManager) PutBulk(r []ValidationResult) error {
+	return nil
 }
 
 func (j *tapOutputManager) Put(r ValidationResult) error {
