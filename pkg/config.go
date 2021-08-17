@@ -76,6 +76,13 @@ type Config struct {
 	// InsecureSkipTLSVerify controls whether to skip TLS certificate validation
 	// when retrieving schema content over HTTPS
 	InsecureSkipTLSVerify bool
+
+	IgnoreKeysFromDeprecation []string
+	IgnoreKeysFromValidation  []string
+	SelectNamespaces          []string
+	IgnoreNamespaces          []string
+	SelectKinds               []string
+	IgnoreKinds               []string
 }
 
 // NewDefaultConfig creates a Config with default values

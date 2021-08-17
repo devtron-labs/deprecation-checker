@@ -64,7 +64,6 @@ func (ks *kubernetesSpec) ValidateObject(object map[string]interface{}) (Validat
 		if validationError != nil && len(validationError) > 0 {
 			errs := []error(validationError)
 			for _, e := range errs {
-				//TODO: handle error of type SchemaError along with openapi3.SchemaError
 				if se, ok := e.(*openapi3.SchemaError); ok {
 					ves = append(ves, se)
 				} else if de, ok := e.(*SchemaError); ok {
@@ -85,7 +84,6 @@ func (ks *kubernetesSpec) ValidateObject(object map[string]interface{}) (Validat
 		if validationError != nil && len(validationError) > 0 {
 			errs := []error(validationError)
 			for _, e := range errs {
-				//TODO: handle error of type SchemaError along with openapi3.SchemaError
 				if se, ok := e.(*openapi3.SchemaError); ok {
 					ves = append(ves, se)
 				} else if de, ok := e.(*SchemaError); ok {
@@ -95,7 +93,7 @@ func (ks *kubernetesSpec) ValidateObject(object map[string]interface{}) (Validat
 		}
 		validationResult.ErrorsForLatest = ves
 		validationResult.DeprecationForLatest = des
-		validationResult.LatestAPIVersion, err = ks.getGVFromToken(latest)
+		validationResult.LatestAPIVersion, err = ks.getKeyForGVFromToken(latest)
 	}
 	return validationResult, nil
 }
@@ -154,13 +152,13 @@ func (ks *kubernetesSpec) applySchema(object map[string]interface{}, token strin
 	return validationError, deprecated
 }
 
-func (ks *kubernetesSpec) getGVFromToken(token string) (string, error) {
+func (ks *kubernetesSpec) getKeyForGVFromToken(token string) (string, error) {
 	dp, err := ks.Components.Schemas.JSONLookup(token)
 	if err != nil {
 		return "", err
 	}
 	scm := dp.(*openapi3.Schema)
-	gv, err := getGV(scm.Extensions["x-kubernetes-group-version-kind"].(json.RawMessage))
+	gv, err := getKeyForGV(scm.Extensions["x-kubernetes-group-version-kind"].(json.RawMessage))
 	if err != nil {
 		return "", err
 	}

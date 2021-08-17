@@ -24,6 +24,7 @@ import (
 	"github.com/devtron-labs/deprecation-checker/kubedd"
 	"github.com/devtron-labs/deprecation-checker/pkg"
 	log2 "github.com/devtron-labs/deprecation-checker/pkg/log"
+	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/prometheus/common/log"
 	"io/ioutil"
 	"net/http"
@@ -39,18 +40,42 @@ import (
 )
 
 var (
-	version             = "dev"
-	commit              = "none"
-	date                = "unknown"
-	directories         = []string{}
-	ignoredPathPatterns = []string{}
-
+	version                   = "dev"
+	commit                    = "none"
+	date                      = "unknown"
+	directories               = make([]string, 0)
+	ignoredPathPatterns       = make([]string, 0)
+	kubeconfig                = ""
+	kubecontext               = ""
+	ignoreKeysFromDeprecation = make([]string, 0)
+	ignoreKeysFromValidation  = make([]string, 0)
+	selectNamespaces          = make([]string, 0)
+	ignoreNamespaces          = make([]string, 0)
+	selectKinds               = make([]string, 0)
+	ignoreKinds               = make([]string, 0)
 	// forceColor tells kubedd to use colored output even if
 	// stdout is not a TTY
 	forceColor bool
 
 	config = pkg.NewDefaultConfig()
 )
+
+/*
+Deleted - Latest Version
+Deprecated - Current Version Latest Version
+Newer - Current Version Latest Version
+Unchanged - Current Version
+
+Field Check
+Deprecated Invalid
+
+
+extenstion/V1alha1 deployment - removed
+apps/v1 deployment - check
+
+
+
+*/
 
 // RootCmd represents the the command to run when kubedd is run
 var RootCmd = &cobra.Command{
@@ -72,60 +97,29 @@ var RootCmd = &cobra.Command{
 			}
 		}
 
+		config.IgnoreKeysFromDeprecation = ignoreKeysFromDeprecation
+		config.IgnoreKeysFromValidation = ignoreKeysFromValidation
+		config.IgnoreKinds = ignoreKinds
+		config.SelectKinds = selectKinds
+		config.IgnoreNamespaces = ignoreNamespaces
+		config.SelectNamespaces = selectNamespaces
+
 		success := true
-		outputManager := pkg.GetOutputManager(config.OutputFormat)
 
 		// Assert that colors will definitely be used if requested
 		if forceColor {
 			color.NoColor = false
 		}
 
-		if len(args) < 1 && len(directories) < 1 {
-			log.Error(errors.New("at least one file or one directory should be passed as argument"))
+		if len(args) < 1 && len(directories) < 1 && len(kubeconfig) < 1 {
+			log.Error(errors.New("at least one file or one directory or kubeconfig path should be passed as argument"))
 			os.Exit(1)
 		}
-		files, err := aggregateFiles(args)
-		if err != nil {
-			log.Error(err)
-			success = false
+		if len(args) > 0 || len(directories) > 0 {
+			success = processFiles(args)
 		}
-
-		var aggResults []pkg.ValidationResult
-		for _, fileName := range files {
-			filePath, _ := filepath.Abs(fileName)
-			fileContents, err := ioutil.ReadFile(filePath)
-			if err != nil {
-				log.Error(fmt.Errorf("Could not open file %v", fileName))
-				earlyExit()
-				success = false
-				continue
-			}
-			config.FileName = fileName
-			results, err := kubedd.Validate(fileContents, config)
-			if err != nil {
-				log.Error(err)
-				earlyExit()
-				success = false
-				continue
-			}
-
-			fmt.Println("")
-			fmt.Printf("Results for file %s\n", fileName)
-			fmt.Println("-------------------------------------------")
-
-			outputManager.PutBulk(results)
-
-			aggResults = append(aggResults, results...)
-		}
-
-		// only use result of hasErrors check if `success` is currently truthy
-		success = success && !hasErrors(aggResults)
-
-		// flush any final logs which may be sitting in the buffer
-		err = outputManager.Flush()
-		if err != nil {
-			log.Error(err)
-			os.Exit(1)
+		if len(kubeconfig) > 0 {
+			processCluster()
 		}
 
 		if !success {
@@ -134,12 +128,136 @@ var RootCmd = &cobra.Command{
 	},
 }
 
+func processFiles(args []string) bool {
+	success := true
+	outputManager := pkg.GetOutputManager(config.OutputFormat)
+	files, err := aggregateFiles(args)
+	if err != nil {
+		log.Error(err)
+		success = false
+	}
+
+	var aggResults []pkg.ValidationResult
+	for _, fileName := range files {
+		filePath, _ := filepath.Abs(fileName)
+		fileContents, err := ioutil.ReadFile(filePath)
+		if err != nil {
+			log.Error(fmt.Errorf("Could not open file %v", fileName))
+			earlyExit()
+			success = false
+			continue
+		}
+		config.FileName = fileName
+		results, err := kubedd.Validate(fileContents, config)
+		if err != nil {
+			log.Error(err)
+			earlyExit()
+			success = false
+			continue
+		}
+
+		fmt.Println("")
+		fmt.Printf("Results for file %s\n", fileName)
+		fmt.Println("-------------------------------------------")
+		results = removeIgnoredKeys(results)
+		outputManager.PutBulk(results)
+
+		aggResults = append(aggResults, results...)
+	}
+
+	// only use result of hasErrors check if `success` is currently truthy
+	success = success && !hasErrors(aggResults)
+
+	// flush any final logs which may be sitting in the buffer
+	err = outputManager.Flush()
+	if err != nil {
+		log.Error(err)
+		success = false
+	}
+	return success
+}
+
+func processCluster() bool {
+	success := true
+	outputManager := pkg.GetOutputManager(config.OutputFormat)
+	cluster := pkg.NewCluster(kubeconfig, kubecontext)
+	results, err := kubedd.ValidateCluster(cluster, config)
+	if err != nil {
+		log.Error(err)
+		earlyExit()
+		success = false
+		return success
+	}
+
+	fmt.Println("")
+	fmt.Printf("Results for cluster %s at version %s\n", cluster.Name, cluster.Version)
+	fmt.Println("-------------------------------------------")
+	results = removeIgnoredKeys(results)
+	outputManager.PutBulk(results)
+
+	//aggResults = append(aggResults, results...)
+	success = success && !hasErrors(results)
+	err = outputManager.Flush()
+	if err != nil {
+		log.Error(err)
+		success = false
+	}
+	return success
+}
+
+func removeIgnoredKeys(results []pkg.ValidationResult) []pkg.ValidationResult {
+	var out []pkg.ValidationResult
+	for _, result := range results {
+		if len(result.DeprecationForOriginal) > 0 {
+			var depErr []*pkg.SchemaError
+			for _, schemaError := range result.DeprecationForOriginal {
+				key := strings.Join(schemaError.JSONPointer(), "/")
+				if !pkg.Contains(key, ignoreKeysFromDeprecation) {
+					depErr = append(depErr, schemaError)
+				}
+			}
+			result.DeprecationForOriginal = depErr
+		}
+		if len(result.DeprecationForLatest) > 0 {
+			var depErr []*pkg.SchemaError
+			for _, schemaError := range result.DeprecationForLatest {
+				key := strings.Join(schemaError.JSONPointer(), "/")
+				if !pkg.Contains(key, ignoreKeysFromDeprecation) {
+					depErr = append(depErr, schemaError)
+				}
+			}
+			result.DeprecationForLatest = depErr
+		}
+		if len(result.ErrorsForOriginal) > 0 {
+			var valErr []*openapi3.SchemaError
+			for _, schemaError := range result.ErrorsForOriginal {
+				key := strings.Join(schemaError.JSONPointer(), "/")
+				if !pkg.Contains(key, ignoreKeysFromValidation) {
+					valErr = append(valErr, schemaError)
+				}
+			}
+			result.ErrorsForOriginal = valErr
+		}
+		if len(result.ErrorsForLatest) > 0 {
+			var valErr []*openapi3.SchemaError
+			for _, schemaError := range result.ErrorsForLatest {
+				key := strings.Join(schemaError.JSONPointer(), "/")
+				if !pkg.Contains(key, ignoreKeysFromValidation) {
+					valErr = append(valErr, schemaError)
+				}
+			}
+			result.ErrorsForLatest = valErr
+		}
+		out = append(out, result)
+	}
+	return out
+}
 
 // hasErrors returns truthy if any of the provided results
 // contain errors.
 func hasErrors(res []pkg.ValidationResult) bool {
 	for _, r := range res {
-		if len(r.Errors) > 0 {
+		if len(r.ErrorsForOriginal) > 0 || len(r.ErrorsForLatest) > 0 {
 			return true
 		}
 	}
@@ -211,9 +329,17 @@ func init() {
 	pkg.AddKubeaddFlags(RootCmd, config)
 	RootCmd.Flags().BoolVarP(&forceColor, "force-color", "", false, "Force colored output even if stdout is not a TTY")
 	RootCmd.SetVersionTemplate(`{{.Version}}`)
+	RootCmd.Flags().StringSliceVarP(&selectNamespaces, "select-namespace", "", []string{}, "A comma-separated list of keys to be ignored for depreciation check")
+	RootCmd.Flags().StringSliceVarP(&ignoreNamespaces, "ignore-namespace", "", []string{"kube-system"}, "A comma-separated list of keys to be ignored for depreciation check")
+	RootCmd.Flags().StringSliceVarP(&ignoreKinds, "ignore-kind", "", []string{"event"}, "A comma-separated list of keys to be ignored for depreciation check")
+	RootCmd.Flags().StringSliceVarP(&selectKinds, "select-kind", "", []string{}, "A comma-separated list of keys to be ignored for depreciation check")
+	RootCmd.Flags().StringSliceVarP(&ignoreKeysFromDeprecation, "ignore-keys-for-deprecation", "", []string{"metadata/selfLink"}, "A comma-separated list of keys to be ignored for depreciation check")
+	RootCmd.Flags().StringSliceVarP(&ignoreKeysFromValidation, "ignore-keys-for-validation", "", []string{"status*"}, "A comma-separated list of keys to be ignored for depreciation check")
 	RootCmd.Flags().StringSliceVarP(&directories, "directories", "d", []string{}, "A comma-separated list of directories to recursively search for YAML documents")
 	RootCmd.Flags().StringSliceVarP(&ignoredPathPatterns, "ignored-path-patterns", "i", []string{}, "A comma-separated list of regular expressions specifying paths to ignore")
 	RootCmd.Flags().StringSliceVarP(&ignoredPathPatterns, "ignored-filename-patterns", "", []string{}, "An alias for ignored-path-patterns")
+	RootCmd.Flags().StringVarP(&kubeconfig, "kubeconfig", "", "", "Path of kubeconfig file of cluster to be scanned")
+	RootCmd.Flags().StringVarP(&kubecontext, "kubecontext", "", "", "Kubecontext to be selected")
 
 	viper.SetEnvPrefix("KUBEADD")
 	viper.AutomaticEnv()
