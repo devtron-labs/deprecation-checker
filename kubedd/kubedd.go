@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"github.com/devtron-labs/deprecation-checker/pkg"
 	kLog "github.com/devtron-labs/deprecation-checker/pkg/log"
+	"github.com/prometheus/common/log"
 	"os"
 )
 
@@ -72,18 +73,32 @@ func ValidateCluster(cluster *pkg.Cluster, conf *pkg.Config) ([]pkg.ValidationRe
 			os.Exit(1)
 		}
 	}
-	resources, err := kubeC.GetResources(conf.KubernetesVersion)
+	serverVersion, err := cluster.ServerVersion()
 	if err != nil {
-		return make([]pkg.ValidationResult, 0), nil
+		log.Debug("unable to parse server version for cluster %v", err)
+		serverVersion = conf.KubernetesVersion
+	}
+	resources, err := kubeC.GetKinds(serverVersion)
+	if err != nil {
+		log.Debug("error fetching data for server version, defaulting to target kubernetes version, err %v", err)
+		//return make([]pkg.ValidationResult, 0), nil
+		resources, err = kubeC.GetKinds(conf.KubernetesVersion)
 	}
 	objects := cluster.FetchK8sObjects(resources, conf)
 	var validationResults []pkg.ValidationResult
 	for _, obj := range objects {
-		bt, err := obj.MarshalJSON()
-		if err != nil {
-			continue
+		annon := obj.GetAnnotations()
+		k8sObj := ""
+		if val, ok := annon["kubectl.kubernetes.io/last-applied-configuration"]; ok {
+			k8sObj = val
+		} else {
+			bt, err := obj.MarshalJSON()
+			if err != nil {
+				continue
+			}
+			k8sObj = string(bt)
 		}
-		validationResult, err := kubeC.ValidateYaml(string(bt), conf.KubernetesVersion)
+		validationResult, err := kubeC.ValidateJson(k8sObj, conf.KubernetesVersion)
 		if err != nil {
 			fmt.Printf("err: %v\n", err)
 			continue
@@ -92,5 +107,3 @@ func ValidateCluster(cluster *pkg.Cluster, conf *pkg.Config) ([]pkg.ValidationRe
 	}
 	return validationResults, nil
 }
-
-

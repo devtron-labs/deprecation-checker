@@ -26,7 +26,7 @@ import (
 	"strings"
 )
 
-func (ks *kubernetesSpec) ValidateYaml(spec string) (ValidationResult, error) {
+func (ks *kubeSpec) ValidateYaml(spec string) (ValidationResult, error) {
 	var err error
 	jsonSpec, err := yaml.YAMLToJSON([]byte(spec))
 	if err != nil {
@@ -36,7 +36,7 @@ func (ks *kubernetesSpec) ValidateYaml(spec string) (ValidationResult, error) {
 	return ks.ValidateJson(string(jsonSpec))
 }
 
-func (ks *kubernetesSpec) ValidateJson(spec string) (ValidationResult, error) {
+func (ks *kubeSpec) ValidateJson(spec string) (ValidationResult, error) {
 	var err error
 	object := make(map[string]interface{})
 	err = json.Unmarshal([]byte(spec), &object)
@@ -47,7 +47,7 @@ func (ks *kubernetesSpec) ValidateJson(spec string) (ValidationResult, error) {
 	return ks.ValidateObject(object)
 }
 
-func (ks *kubernetesSpec) ValidateObject(object map[string]interface{}) (ValidationResult, error) {
+func (ks *kubeSpec) ValidateObject(object map[string]interface{}) (ValidationResult, error) {
 	validationResult, err := ks.populateValidationResult(object)
 	validationResult.ValidatedAgainstSchema = true
 	if err != nil {
@@ -98,7 +98,7 @@ func (ks *kubernetesSpec) ValidateObject(object map[string]interface{}) (Validat
 	return validationResult, nil
 }
 
-func (ks *kubernetesSpec) populateValidationResult(object map[string]interface{}) (ValidationResult, error) {
+func (ks *kubeSpec) populateValidationResult(object map[string]interface{}) (ValidationResult, error) {
 	validationResult := ValidationResult{}
 	namespace := "undefined"
 	if object == nil {
@@ -127,7 +127,7 @@ func (ks *kubernetesSpec) populateValidationResult(object map[string]interface{}
 	return validationResult, nil
 }
 
-func (ks *kubernetesSpec) applySchema(object map[string]interface{}, token string) (openapi3.MultiError, bool) {
+func (ks *kubeSpec) applySchema(object map[string]interface{}, token string) (openapi3.MultiError, bool) {
 	deprecated := false
 	var validationError openapi3.MultiError
 	dp, err := ks.Components.Schemas.JSONLookup(token)
@@ -152,7 +152,7 @@ func (ks *kubernetesSpec) applySchema(object map[string]interface{}, token strin
 	return validationError, deprecated
 }
 
-func (ks *kubernetesSpec) getKeyForGVFromToken(token string) (string, error) {
+func (ks *kubeSpec) getKeyForGVFromToken(token string) (string, error) {
 	dp, err := ks.Components.Schemas.JSONLookup(token)
 	if err != nil {
 		return "", err
@@ -165,7 +165,7 @@ func (ks *kubernetesSpec) getKeyForGVFromToken(token string) (string, error) {
 	return gv, nil
 }
 
-func (ks *kubernetesSpec) getKindsMappings(object map[string]interface{}) (original, latest string, err error) {
+func (ks *kubeSpec) getKindsMappings(object map[string]interface{}) (original, latest string, err error) {
 	original = ""
 	latest = ""
 	if object == nil {
@@ -176,16 +176,22 @@ func (ks *kubernetesSpec) getKindsMappings(object map[string]interface{}) (origi
 	if !ok {
 		return "", "", fmt.Errorf("missing kind")
 	}
-	gvk := strings.ToLower(fmt.Sprintf("%s/%s", apiVersion, kind))
-	if _, ok := ks.pathMap[gvk]; ok {
-		if component, ok := ks.componentMap[gvk]; ok {
-			original = component
+	parts := strings.Split(apiVersion, "/")
+	if len(parts) == 0 {
+		return "", "", fmt.Errorf("unable to parse group and version from %s", apiVersion)
+	}
+	if len(parts) == 1 {
+		parts = []string{"", parts[0]}
+	}
+	if kis, ok := ks.kindInfoMap[strings.ToLower(kind)]; ok {
+		for _, ki := range kis {
+			if parts[0] == ki.Group && parts[1] == ki.Version && len(ki.RestPath) > 0 {
+				original = ki.ComponentKey
+			}
+		}
+		if len(kis) > 0 {
+			latest = kis[len(kis)-1].ComponentKey
 		}
 	}
-
-	if _, ok := ks.kindMap[strings.ToLower(kind)]; !ok {
-		return original, "", nil
-	}
-	latest = ks.kindMap[strings.ToLower(kind)]
 	return original, latest, nil
 }

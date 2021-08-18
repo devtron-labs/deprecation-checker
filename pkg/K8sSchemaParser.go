@@ -22,7 +22,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	kLog "github.com/devtron-labs/deprecation-checker/pkg/log"
+	"github.com/devtron-labs/deprecation-checker/pkg/log"
 	"github.com/getkin/kin-openapi/openapi2"
 	"github.com/getkin/kin-openapi/openapi2conv"
 	"github.com/getkin/kin-openapi/openapi3"
@@ -31,6 +31,7 @@ import (
 	"io/ioutil"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"net/http"
+	"sort"
 	"strings"
 )
 
@@ -42,17 +43,7 @@ const (
 	alphaVersion      = 1
 	betaVersion       = 2
 	gaVersion         = 3
-	gvFormat          = "%s/%s"
-	gvkFormat         = "%s/%s/%s"
 )
-
-type kubernetesSpec struct {
-	*openapi3.T
-	kindMap      map[string]string
-	componentMap map[string]string
-	pathMap      map[string]string
-	config       *Config
-}
 
 type KubeChecker interface {
 	LoadFromUrl(releaseVersion string, force bool) error
@@ -60,15 +51,15 @@ type KubeChecker interface {
 	ValidateJson(spec string, releaseVersion string) (ValidationResult, error)
 	ValidateYaml(spec string, releaseVersion string) (ValidationResult, error)
 	ValidateObject(spec map[string]interface{}, releaseVersion string) (ValidationResult, error)
-	GetResources(releaseVersion string) ([]schema.GroupVersionKind, error)
+	GetKinds(releaseVersion string) ([]schema.GroupVersionKind, error)
 }
 
 type kubeCheckerImpl struct {
-	versionMap map[string]*kubernetesSpec
+	versionMap map[string]*kubeSpec
 }
 
 func NewKubeCheckerImpl() *kubeCheckerImpl {
-	return &kubeCheckerImpl{versionMap: map[string]*kubernetesSpec{}}
+	return &kubeCheckerImpl{versionMap: map[string]*kubeSpec{}}
 }
 
 func (k *kubeCheckerImpl) hasReleaseVersion(releaseVersion string) bool {
@@ -106,10 +97,7 @@ func (k *kubeCheckerImpl) load(data []byte, releaseVersion string) error {
 		//kLog.Debug(fmt.Sprintf("%v", err))
 		return err
 	}
-	kindMap := buildKindMap(openapi)
-	componentMap := buildComponentMap(openapi)
-	pathMap := buildPathMap(openapi)
-	k.versionMap[releaseVersion] = &kubernetesSpec{T: openapi, kindMap: kindMap, componentMap: componentMap, pathMap: pathMap}
+	k.versionMap[releaseVersion] = newKubeSpec(openapi)
 	return nil
 }
 
@@ -190,62 +178,6 @@ func loadOpenApi2(data []byte) (*openapi3.T, error) {
 	return doc, nil
 }
 
-func buildComponentMap(openapidoc *openapi3.T) map[string]string {
-	componentMap := map[string]string{}
-	for component, value := range openapidoc.Components.Schemas {
-		if gvk, ok := value.Value.Extensions["x-kubernetes-group-version-kind"]; ok {
-			gvks, err := getKeyForRawGVK(gvk.(json.RawMessage))
-			if err != nil {
-				continue
-			}
-			componentMap[gvks] = component
-		}
-	}
-	return componentMap
-}
-
-func buildPathMap(openapidoc *openapi3.T) map[string]string {
-	pathMap := map[string]string{}
-	for path, value := range openapidoc.Paths {
-		var method *openapi3.Operation
-		if value.Post != nil {
-			method = value.Post
-		} else if value.Put != nil {
-			method = value.Put
-		}
-		if method != nil {
-			if gvk, ok := method.Extensions["x-kubernetes-group-version-kind"]; ok {
-				gvks, err := getKeyForRawGVK(gvk.(json.RawMessage))
-				if err != nil {
-					continue
-				}
-				pathMap[gvks] = path
-			}
-		}
-	}
-	return pathMap
-}
-
-func buildKindMap(openapidoc *openapi3.T) map[string]string {
-	kindMap := map[string]string{}
-	for component := range openapidoc.Components.Schemas {
-		componentParts := strings.Split(component, ".")
-		if len(componentParts) > 0 {
-			kind := strings.ToLower(componentParts[len(componentParts)-1])
-			if _, ok := kindMap[kind]; !ok {
-				kindMap[kind] = component
-			}
-			version, err := compareVersion(kindMap[kind], component)
-			if err != nil {
-				kLog.Debug(fmt.Sprintf("unable to compare %s and %s", kind, component))
-				continue
-			}
-			kindMap[kind] = version
-		}
-	}
-	return kindMap
-}
-
 func (k *kubeCheckerImpl) ValidateYaml(spec string, releaseVersion string) (ValidationResult, error) {
 	err := k.LoadFromUrl(releaseVersion, false)
 	if err != nil {
@@ -270,10 +202,131 @@ func (k *kubeCheckerImpl) ValidateObject(spec map[string]interface{}, releaseVer
 	return k.versionMap[releaseVersion].ValidateObject(spec)
 }
 
-func (k *kubeCheckerImpl) GetResources(releaseVersion string) ([]schema.GroupVersionKind, error)  {
+func (k *kubeCheckerImpl) GetKinds(releaseVersion string) ([]schema.GroupVersionKind, error) {
 	err := k.LoadFromUrl(releaseVersion, false)
 	if err != nil {
 		return make([]schema.GroupVersionKind, 0), err
 	}
-	return buildResources(k.versionMap[releaseVersion].T), nil
+	return k.versionMap[releaseVersion].fetchLatestKinds(), nil
+}
+
+type kubeSpec struct {
+	*openapi3.T
+	kinds                   []schema.GroupVersionKind
+	kindInfoMap             map[string][]*KindInfo
+}
+
+func newKubeSpec(openapi *openapi3.T) *kubeSpec {
+	ks := &kubeSpec{T: openapi}
+	ks.kindInfoMap = ks.buildKindInfoMap()
+	ks.kinds = ks.buildResources()
+	return ks
+}
+
+func (ks *kubeSpec) buildGVKRestPathMap() map[string]string {
+	pathMap := map[string]string{}
+	for path, value := range ks.T.Paths {
+		var method *openapi3.Operation
+		if value.Post != nil {
+			method = value.Post
+		} else if value.Put != nil {
+			method = value.Put
+		}
+		if method != nil {
+			if gvk, ok := method.Extensions["x-kubernetes-group-version-kind"]; ok {
+				gvks, err := getKeyForGVK(gvk.(json.RawMessage))
+				if err != nil {
+					continue
+				}
+				pathMap[gvks] = path
+			}
+		}
+	}
+	return pathMap
+}
+
+func (ks *kubeSpec) buildKindInfoMap() map[string][]*KindInfo {
+	kindMap := map[string][]*KindInfo{}
+	restPath := ks.buildGVKRestPathMap()
+	for component, value := range ks.T.Components.Schemas {
+		if gvk, ok := value.Value.Extensions["x-kubernetes-group-version-kind"]; ok {
+			gvks, err := parseGVK(gvk.(json.RawMessage))
+			if err != nil {
+				continue
+			}
+			kind := strings.ToLower(gvks["kind"])
+			if _, ok := kindMap[kind]; !ok {
+				kindMap[kind] = make([]*KindInfo, 0)
+			}
+			ki := KindInfo{
+				Version:      gvks["version"],
+				Group:        gvks["group"],
+				RestPath:     "",
+				ComponentKey: component,
+				IsGA:         getVersionType(gvks["version"]) == gaVersion,
+			}
+			gvkKey, err := getKeyForGVK(gvk.(json.RawMessage))
+			if err != nil {
+				log.Error(err)
+				continue
+			}
+			if p, ok := restPath[gvkKey]; ok {
+				ki.RestPath = p
+			}
+			kindMap[kind] = append(kindMap[kind], &ki)
+		}
+	}
+	for kind, gvs := range kindMap {
+		sort.Slice(gvs, func(i, j int) bool {
+			return compareVersion(gvs[i].Version, gvs[j].Version)
+		})
+		kindMap[kind] = gvs
+	}
+	return kindMap
+}
+
+func (ks *kubeSpec) buildResources() []schema.GroupVersionKind {
+	gvkMap := make(map[string]bool, 0)
+	var gvka []schema.GroupVersionKind
+	for _, value := range ks.T.Paths {
+		if value.Get == nil {
+			continue
+		}
+		if gvks, ok := value.Get.Extensions["x-kubernetes-group-version-kind"]; ok {
+			gvkm, err := parseGVK(gvks.(json.RawMessage))
+			if err != nil {
+				continue
+			}
+			gvk := schema.GroupVersionKind{
+				Group:   gvkm["group"],
+				Version: gvkm["version"],
+				Kind:    gvkm["kind"],
+			}
+			if _, ok := gvkMap[gvk.String()]; ok {
+				continue
+			}
+			gvkMap[gvk.String()] = true
+			gvka = append(gvka, gvk)
+		}
+	}
+	return gvka
+}
+
+func (ks *kubeSpec) fetchLatestKinds() []schema.GroupVersionKind {
+	gvkMap := make(map[string]bool, 0)
+	var gvka []schema.GroupVersionKind
+	for kind, info := range ks.kindInfoMap {
+		last := info[len(info) - 1]
+		gvk := schema.GroupVersionKind{
+			Group:   last.Group,
+			Version: last.Version,
+			Kind:    kind,
+		}
+		if _, ok := gvkMap[gvk.String()]; ok {
+			continue
+		}
+		gvkMap[gvk.String()] = true
+		gvka = append(gvka, gvk)
+	}
+	return gvka
 }

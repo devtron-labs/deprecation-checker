@@ -187,3 +187,23 @@ func RegisterArrayUniqueItemsChecker(fn SliceUniqueItemsChecker) {
 func unsupportedFormat(format string) error {
 	return fmt.Errorf("unsupported 'format' value %q", format)
 }
+
+/*
+ApiVersion/Kind
+RestPath - string - to find if deleted or not
+ComponentKey - string -  to find schema for validation
+ApiVersions - array - for migration - ga or nots
+*/
+
+type GroupVersions struct {
+	GroupVersions   []string
+	GAGroupVersions []string
+}
+
+type KindInfo struct {
+	Version      string
+	Group        string
+	RestPath     string
+	ComponentKey string
+	IsGA         bool
+}

@@ -54,6 +54,13 @@ func NewCluster(kubeconfig string, kubecontext string) *Cluster {
 	return &cluster
 }
 
+func (c *Cluster) ServerVersion() (string, error) {
+	info, err := c.disco.ServerVersion()
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%s.%s", info.Major, info.Minor), nil
+}
 func (c *Cluster) FetchK8sObjects(gvks []schema.GroupVersionKind, conf *Config) []unstructured.Unstructured {
 	var resources []schema.GroupVersionResource
 	mapper := restmapper.NewDeferredDiscoveryRESTMapper(memory.NewMemCacheClient(c.disco))

@@ -332,9 +332,10 @@ func TestDownloadFile(t *testing.T) {
 			kc := NewKubeCheckerImpl()
 			var err error
 			err = kc.LoadFromUrl(tt.args.releaseVersion, false)
-			_, err = kc.ValidateJson(tt.args.object, tt.args.releaseVersion)
+			v, err := kc.ValidateJson(tt.args.object, tt.args.releaseVersion)
 			//fmt.Println(string(got))
-			if (err != nil) != tt.wantErr {
+			hasErr := len(v.ErrorsForOriginal) > 0 || len(v.ErrorsForLatest) > 0
+			if hasErr != tt.wantErr {
 				t.Errorf("DownloadFile() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
@@ -350,91 +351,78 @@ func Test_compareVersion(t *testing.T) {
 	tests := []struct {
 		name    string
 		args    args
-		want    string
+		want    bool
 		wantErr bool
 	}{
 		{
 			name: "compare deployment",
 			args: args{
-				first:  "io.k8s.api.extensions.v1beta1.Deployment",
-				second: "io.k8s.api.apps.v1.Deployment",
+				first:  "v1beta1",
+				second: "v1",
 			},
-			want: "io.k8s.api.apps.v1.Deployment",
+			want: true,
 			wantErr: false,
 		},
 		{
 			name: "compare deployment",
 			args: args{
-				first:  "io.k8s.api.extensions.v2beta1.Deployment",
-				second: "io.k8s.api.apps.v1.Deployment",
+				first:  "v2beta1",
+				second: "v1",
 			},
-			want: "io.k8s.api.apps.v1.Deployment",
-			wantErr: false,
-		},
-		{
-			name: "compare deployment",
-			args: args{
-				first:  "io.k8s.api.apps.v2beta1.Deployment",
-				second: "io.k8s.api.apps.v1.Deployment",
-			},
-			want: "io.k8s.api.apps.v2beta1.Deployment",
+			want: false,
 			wantErr: false,
 		},
 		{
 			name: "compare APIService",
 			args: args{
-				first:  "apiregistration.k8s.io.v1beta1.APIService",
-				second: "apiregistration.k8s.io.v1alpha1.APIService",
+				first:  "v1beta1",
+				second: "v1alpha1",
 			},
-			want: "apiregistration.k8s.io.v1beta1.APIService",
+			want: false,
 			wantErr: false,
 		},
 		{
 			name: "compare deployment",
 			args: args{
-				first:  "io.k8s.api.extensions.v1alpha1.Deployment",
-				second: "io.k8s.api.extensions.v1beta1.Deployment",
+				first:  "v1alpha1",
+				second: "v1beta1",
 			},
-			want: "io.k8s.api.extensions.v1beta1.Deployment",
+			want: true,
 			wantErr: false,
 		},
 		{
 			name: "compare deployment",
 			args: args{
-				first:  "io.k8s.api.extensions.v1beta1.Deployment",
-				second: "io.k8s.api.extensions.v1beta2.Deployment",
+				first:  "v1beta1",
+				second: "v1beta2",
 			},
-			want: "io.k8s.api.extensions.v1beta2.Deployment",
+			want: true,
 			wantErr: false,
 		},
 		{
 			name: "compare deployment",
 			args: args{
-				first:  "io.k8s.api.extensions.v1beta2.Deployment",
-				second: "io.k8s.api.extensions.v1beta1.Deployment",
+				first:  "v1beta2",
+				second: "v1beta1",
 			},
-			want: "io.k8s.api.extensions.v1beta2.Deployment",
+			want: false,
 			wantErr: false,
 		},
 		{
 			name: "compare deployment",
 			args: args{
-				first:  "io.k8s.api.apps.v2.Deployment",
-				second: "io.k8s.api.apps.v1.Deployment",
+				first:  "v2",
+				second: "v1",
 			},
-			want: "io.k8s.api.apps.v2.Deployment",
+			want: false,
 			wantErr: false,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := compareVersion(tt.args.first, tt.args.second)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("compareVersion() error = %v, wantErr %v", err, tt.wantErr)
-				return
-			}
+			got := compareVersion(tt.args.first, tt.args.second)
 			if got != tt.want {
-				t.Errorf("compareVersion() got = %v, want %v", got, tt.want)
+				t.Errorf("getLargerVersion() got = %v, want %v", got, tt.want)
 			}
 		})
 	}

@@ -20,59 +20,30 @@ package pkg
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/devtron-labs/deprecation-checker/pkg/log"
-	"github.com/getkin/kin-openapi/openapi3"
-	"k8s.io/apimachinery/pkg/runtime/schema"
+	kLog "github.com/devtron-labs/deprecation-checker/pkg/log"
 	"math"
 	"regexp"
 	"strconv"
 	"strings"
 )
 
-func buildResources(openpidoc *openapi3.T) []schema.GroupVersionKind {
-	gvkMap := make(map[string]bool, 0)
-	var gvka []schema.GroupVersionKind
-	for _, value := range openpidoc.Components.Schemas {
-		if gvks, ok := value.Value.Extensions["x-kubernetes-group-version-kind"]; ok {
-			gvkm, err := parseGVK(gvks.(json.RawMessage))
-			if err != nil {
-				continue
-			}
-			gvk := schema.GroupVersionKind{
-				Group:   gvkm["group"],
-				Version: gvkm["version"],
-				Kind:    gvkm["kind"],
-			}
-			if _, ok := gvkMap[gvk.String()]; ok {
-				continue
-			}
-			gvkMap[gvk.String()] = true
-			gvka = append(gvka, gvk)
-		}
-	}
-	return gvka
-}
+const (
+	gvFormat          = "%s/%s"
+	gvkFormat         = "%s/%s/%s"
+)
 
 func getKeyForGV(msg json.RawMessage) (string, error) {
-	var arr []map[string]string
-	err := json.Unmarshal(msg, &arr)
-	if err == nil {
-		if len(arr) > 1 {
-			return "", fmt.Errorf("multiple x-kubernetes-group-version-kind hence skipping")
-		}
-		if len(arr) > 0 {
-			return fmt.Sprintf(gvFormat, arr[0]["group"], arr[0]["version"]), nil
-		}
+	m, err := parseGVK(msg)
+	if err != nil {
+		return "", err
 	}
-	var m map[string]string
-	err = json.Unmarshal(msg, &m)
-	if err == nil {
-		return fmt.Sprintf(gvFormat, m["group"], m["version"]), nil
+	if len(m["group"]) == 0 {
+		return m["version"], nil
 	}
-	return "", nil
+	return fmt.Sprintf(gvFormat, m["group"], m["version"]), nil
 }
 
-func getKeyForRawGVK(msg json.RawMessage) (string, error) {
+func getKeyForGVK(msg json.RawMessage) (string, error) {
 	gvk, err := parseGVK(msg)
 	if err != nil {
 		return "", err
@@ -103,37 +74,41 @@ func parseGVK(msg json.RawMessage) (map[string]string, error) {
 	return nil, fmt.Errorf("parsing error")
 }
 
-func compareVersion(lhs, rhs string) (string, error) {
+//func getLargerVersion(lhs, rhs string) string {
+//	if compareVersion(lhs, rhs) {
+//		return rhs
+//	} else {
+//		return lhs
+//	}
+//}
+
+func compareVersion(lhs, rhs string) bool {
 	if lhs == rhs {
-		return lhs, nil
+		return false
 	}
 	if !isExtension(lhs) && isExtension(rhs) {
-		return lhs, nil
+		return false
 	}
 	if isExtension(lhs) && !isExtension(rhs) {
-		return rhs, nil
+		return true
 	}
 
-	firstApiVersion := getApiVersion(lhs)
-	secondApiVersion := getApiVersion(rhs)
+	//firstApiVersion := getApiVersion(lhs)
+	//secondApiVersion := getApiVersion(rhs)
 
-	isSmaller, err := isSmallerVersion(firstApiVersion, secondApiVersion)
+	isSmaller, err := isSmallerVersion(lhs, rhs)
 	if err != nil {
-		//kLog.Debug(fmt.Sprintf("%v", err))
-		return "", err
+		kLog.Debug(fmt.Sprintf("%v", err))
+		return false
 	}
-	if isSmaller {
-		return rhs, nil
-	} else {
-		return lhs, nil
-	}
+	return isSmaller
 }
 
-func getApiVersion(first string) string {
-	components := strings.Split(strings.ToLower(first), ".")[3:]
-	apiVersion := components[len(components)-2]
-	return apiVersion
-}
+//func getApiVersion(first string) string {
+//	components := strings.Split(strings.ToLower(first), ".")[3:]
+//	apiVersion := components[len(components)-2]
+//	return apiVersion
+//}
 
 func isExtension(second string) bool {
 	return strings.Index(second, "extensions") >= 0
@@ -144,7 +119,7 @@ func isSmallerVersion(lhs, rhs string) (bool, error) {
 	var err error
 	re, err = regexp.Compile("v(\\d*)([^0-9]*)(\\d*)")
 	if err != nil {
-		log.Error(err)
+		return false, err
 	}
 	lhsMatch := re.FindAllStringSubmatch(lhs, -1)
 	rhsMatch := re.FindAllStringSubmatch(rhs, -1)
@@ -214,6 +189,10 @@ func getVersionType(apiVersion string) int {
 		return betaVersion
 	}
 	return gaVersion
+}
+
+func isGA(apiVersion string) bool {
+	return getVersionType(apiVersion) == gaVersion
 }
 
 
