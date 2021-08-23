@@ -1,6 +1,9 @@
 package pkg
 
-import "testing"
+import (
+	"fmt"
+	"testing"
+)
 
 func TestRegexMatch(t *testing.T) {
 	type args struct {
@@ -39,6 +42,11 @@ func TestRegexMatch(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			migrationStatus := fmt.Sprintf("%s%d%s%s%s", "\033[31m", 1, " issue(s):", "\033[100;97m", " fix issues before migration")
+
+			fmt.Printf("|%6s|%6s|\n", "foo", "b")
+			fmt.Printf("|%6s|%6s|\n", "foo", "\033[97m bn")
+			fmt.Println(migrationStatus)
 			if got := RegexMatch(tt.args.s, tt.args.pattern); got != tt.want {
 				t.Errorf("RegexMatch() = %v, want %v", got, tt.want)
 			}

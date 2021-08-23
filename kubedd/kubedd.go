@@ -83,6 +83,10 @@ func ValidateCluster(cluster *pkg.Cluster, conf *pkg.Config) ([]pkg.ValidationRe
 		log.Debug("error fetching data for server version, defaulting to target kubernetes version, err %v", err)
 		//return make([]pkg.ValidationResult, 0), nil
 		resources, err = kubeC.GetKinds(conf.KubernetesVersion)
+		if err != nil {
+			log.Debug("error fetching data for target kubernetes version, err %v", err)
+			return make([]pkg.ValidationResult, 0), nil
+		}
 	}
 	objects := cluster.FetchK8sObjects(resources, conf)
 	var validationResults []pkg.ValidationResult
@@ -98,12 +102,25 @@ func ValidateCluster(cluster *pkg.Cluster, conf *pkg.Config) ([]pkg.ValidationRe
 			}
 			k8sObj = string(bt)
 		}
-		validationResult, err := kubeC.ValidateJson(k8sObj, conf.KubernetesVersion)
+		validationResult, err := kubeC.ValidateJson(k8sObj, serverVersion)
 		if err != nil {
 			fmt.Printf("err: %v\n", err)
 			continue
 		}
 		validationResults = append(validationResults, validationResult)
+	}
+	cache := make(map[string]bool, 0)
+	for _, result := range validationResults {
+		if _, ok := cache[fmt.Sprintf("%s/%s", result.LatestAPIVersion, result.Kind)]; !ok {
+			isSupported := kubeC.IsVersionSupported(conf.KubernetesVersion,  result.LatestAPIVersion, result.Kind)
+			cache[fmt.Sprintf("%s/%s", result.LatestAPIVersion, result.Kind)] = isSupported
+		}
+		isSupported := cache[fmt.Sprintf("%s/%s", result.LatestAPIVersion, result.Kind)]
+		if isSupported {
+			result.IsVersionSupported = 1
+		} else {
+			result.IsVersionSupported = 2
+		}
 	}
 	return validationResults, nil
 }

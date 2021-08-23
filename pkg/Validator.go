@@ -130,13 +130,24 @@ func (ks *kubeSpec) populateValidationResult(object map[string]interface{}) (Val
 func (ks *kubeSpec) applySchema(object map[string]interface{}, token string) (openapi3.MultiError, bool) {
 	deprecated := false
 	var validationError openapi3.MultiError
-	dp, err := ks.Components.Schemas.JSONLookup(token)
-	if err != nil {
-		log.Debug(fmt.Sprintf("%v", err))
-		validationError = append(validationError, err)
-		return validationError, deprecated
+	var scm *openapi3.Schema
+	var err error
+	for ; ; {
+		ok := false
+		dp, err := ks.Components.Schemas.JSONLookup(token)
+		if err != nil {
+			log.Debug(fmt.Sprintf("%v", err))
+			validationError = append(validationError, err)
+			return validationError, deprecated
+		}
+		if scm, ok = dp.(*openapi3.Schema); ok {
+			break
+		}
+		if ref, ok := dp.(*openapi3.Ref); ok {
+			token = ref.Ref
+		}
 	}
-	scm := dp.(*openapi3.Schema)
+
 	opts := []openapi3.SchemaValidationOption{openapi3.MultiErrors()}
 	depError := VisitJSON(scm, object, SchemaSettings{MultiError: true})
 	if len(depError) > 0 {

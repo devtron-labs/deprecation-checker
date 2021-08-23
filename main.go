@@ -189,8 +189,9 @@ func processCluster() bool {
 		return success
 	}
 
+	serverVersion, _ := cluster.ServerVersion()
 	fmt.Println("")
-	fmt.Printf("Results for cluster %s at version %s\n", cluster.Name, cluster.Version)
+	fmt.Printf("Results for cluster at version %s\n", serverVersion)
 	fmt.Println("-------------------------------------------")
 	results = removeIgnoredKeys(results)
 	outputManager.PutBulk(results)

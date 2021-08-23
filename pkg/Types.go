@@ -55,6 +55,7 @@ type ValidationResult struct {
 	Deleted                bool
 	Deprecated             bool
 	LatestAPIVersion       string
+	IsVersionSupported     int
 }
 
 // VersionKind returns a string representation of this result's apiVersion and kind

@@ -46,6 +46,7 @@ const (
 )
 
 type KubeChecker interface {
+	IsVersionSupported(releaseVersion, apiVersion, kind string)  bool
 	LoadFromUrl(releaseVersion string, force bool) error
 	LoadFromPath(releaseVersion string, filePath string, force bool) error
 	ValidateJson(spec string, releaseVersion string) (ValidationResult, error)
@@ -210,16 +211,22 @@ func (k *kubeCheckerImpl) GetKinds(releaseVersion string) ([]schema.GroupVersion
 	return k.versionMap[releaseVersion].fetchLatestKinds(), nil
 }
 
+func (k *kubeCheckerImpl) IsVersionSupported(releaseVersion, apiVersion, kind string) bool {
+	err := k.LoadFromUrl(releaseVersion, false)
+	if err != nil {
+		return false
+	}
+	return k.versionMap[releaseVersion].IsVersionSupported(apiVersion, kind)
+}
+
 type kubeSpec struct {
 	*openapi3.T
-	kinds                   []schema.GroupVersionKind
 	kindInfoMap             map[string][]*KindInfo
 }
 
 func newKubeSpec(openapi *openapi3.T) *kubeSpec {
 	ks := &kubeSpec{T: openapi}
 	ks.kindInfoMap = ks.buildKindInfoMap()
-	ks.kinds = ks.buildResources()
 	return ks
 }
 
@@ -285,33 +292,6 @@ func (ks *kubeSpec) buildKindInfoMap() map[string][]*KindInfo {
 	return kindMap
 }
 
-func (ks *kubeSpec) buildResources() []schema.GroupVersionKind {
-	gvkMap := make(map[string]bool, 0)
-	var gvka []schema.GroupVersionKind
-	for _, value := range ks.T.Paths {
-		if value.Get == nil {
-			continue
-		}
-		if gvks, ok := value.Get.Extensions["x-kubernetes-group-version-kind"]; ok {
-			gvkm, err := parseGVK(gvks.(json.RawMessage))
-			if err != nil {
-				continue
-			}
-			gvk := schema.GroupVersionKind{
-				Group:   gvkm["group"],
-				Version: gvkm["version"],
-				Kind:    gvkm["kind"],
-			}
-			if _, ok := gvkMap[gvk.String()]; ok {
-				continue
-			}
-			gvkMap[gvk.String()] = true
-			gvka = append(gvka, gvk)
-		}
-	}
-	return gvka
-}
-
 func (ks *kubeSpec) fetchLatestKinds() []schema.GroupVersionKind {
 	gvkMap := make(map[string]bool, 0)
 	var gvka []schema.GroupVersionKind
@@ -329,4 +309,17 @@ func (ks *kubeSpec) fetchLatestKinds() []schema.GroupVersionKind {
 		gvka = append(gvka, gvk)
 	}
 	return gvka
+}
+
+func (ks *kubeSpec) IsVersionSupported(apiVersion, kind string) bool {
+	if kim, ok := ks.kindInfoMap[strings.ToLower(kind)]; ok {
+		//fmt.Printf("found %s \n", kind)
+		for _, ki := range kim {
+			//fmt.Printf("%s:%s\n", apiVersion, ki.Version)
+			if strings.EqualFold(ki.Version, apiVersion) {
+				return true
+			}
+		}
+	}
+	return false
 }

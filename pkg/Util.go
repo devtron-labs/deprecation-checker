@@ -93,9 +93,6 @@ func compareVersion(lhs, rhs string) bool {
 		return true
 	}
 
-	//firstApiVersion := getApiVersion(lhs)
-	//secondApiVersion := getApiVersion(rhs)
-
 	isSmaller, err := isSmallerVersion(lhs, rhs)
 	if err != nil {
 		kLog.Debug(fmt.Sprintf("%v", err))
@@ -103,12 +100,6 @@ func compareVersion(lhs, rhs string) bool {
 	}
 	return isSmaller
 }
-
-//func getApiVersion(first string) string {
-//	components := strings.Split(strings.ToLower(first), ".")[3:]
-//	apiVersion := components[len(components)-2]
-//	return apiVersion
-//}
 
 func isExtension(second string) bool {
 	return strings.Index(second, "extensions") >= 0
@@ -190,11 +181,6 @@ func getVersionType(apiVersion string) int {
 	}
 	return gaVersion
 }
-
-func isGA(apiVersion string) bool {
-	return getVersionType(apiVersion) == gaVersion
-}
-
 
 func Contains(key string, patterns []string) bool {
 	for _, ignoreKey := range patterns {
