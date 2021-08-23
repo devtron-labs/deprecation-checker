@@ -206,10 +206,8 @@ func RegexMatch(s string, pattern string) bool {
 	}
 	if strings.Index(lp, "*") == 0 {
 		np := strings.ReplaceAll(lp, "*", "")
-		i := strings.Index(ls, np)
-		return len(ls) == i + len(np)
-		return strings.Contains(ls,np)
+		return strings.HasSuffix(ls, np)
 	}
 	np := strings.ReplaceAll(lp, "*", "")
-	return strings.Index(ls, np) == 0
+	return strings.HasPrefix(ls, np)
 }

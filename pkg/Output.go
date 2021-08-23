@@ -21,7 +21,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	kLog "github.com/devtron-labs/deprecation-checker/pkg/log"
 	"github.com/fatih/color"
 	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/mgutz/ansi"
@@ -48,6 +47,10 @@ const (
 	outputSTD  = "stdout"
 	outputJSON = "json"
 	outputTAP  = "tap"
+)
+
+var (
+	hiWhite = color.New(color.FgWhite).SprintFunc()
 )
 
 func validOutputs() []string {
@@ -158,21 +161,9 @@ func (s *STDOutputManager) SummaryTableBodyOutput(results []ValidationResult) {
 	c.TitleColorCode = ansi.ColorCode("cyan+bu")
 	c.AltColorCodes = []string{ansi.LightWhite, ansi.ColorCode("white+h:238")}
 	c.ShowIndex = false
-	//redWithoutBg := color.New(color.FgRed).SprintFunc()
-	//redWithBg := color.New(color.FgRed, color.BgHiBlack).SprintFunc()
-	//whiteWithoutBg := color.New(color.FgHiWhite).SprintFunc()
-	//whiteWithBg := color.New(color.FgHiWhite, color.BgHiBlack).SprintFunc()
-	//i := 0
 	for _, result := range results {
 		migrationStatus := "can be migrated with just apiVersion change"
 		if len(result.ErrorsForLatest) > 0 {
-			//i++
-			//textColor := whiteWithoutBg
-			//redColor := redWithoutBg
-			//if i%2 == 0 {
-			//	textColor = whiteWithBg
-			//	redColor = redWithBg
-			//}
 			migrationStatus = fmt.Sprintf("%s%d%s%s%s", "\033[31m", len(result.ErrorsForLatest), " issue(s):", "\033[97m", " fix issues before migration")
 		}
 		if result.IsVersionSupported == 2 {
@@ -202,7 +193,12 @@ func (s *STDOutputManager) DeprecationTableBodyOutput(results []ValidationResult
 	if !hasData {
 		return
 	}
-	kLog.Error(fmt.Errorf("Deprecated fields, good to resolve them before migration"))
+	if !currentVersion {
+		fmt.Println(hiWhite( "Deprecated fields against latest api version, recommeded to resolve them before migration"))
+	} else {
+		fmt.Println(hiWhite("Deprecated fields against current api version, recommended to resolve them"))
+	}
+
 	t := table.Table{Headers: []string{"Namespace", "Name", "Kind", "API Version", "Field", "Reason"}}
 	c := table.DefaultConfig()
 	c.TitleColorCode = ansi.ColorCode("cyan+bu")
@@ -242,7 +238,11 @@ func (s *STDOutputManager) ValidationErrorTableBodyOutput(results []ValidationRe
 	if !hasData {
 		return
 	}
-	kLog.Error(fmt.Errorf("Following issues should be resolved before migration"))
+	if !currentVersion {
+		fmt.Println(hiWhite(">>> Validation Errors against latest api version, should be resolved before migration <<<"))
+	} else {
+		fmt.Println(hiWhite(">>> Validation Errors against current api version <<<"))
+	}
 	t := table.Table{Headers: []string{"Namespace", "Name", "Kind", "API Version", "Field", "Reason"}}
 	c := table.DefaultConfig()
 	c.TitleColorCode = ansi.ColorCode("cyan+bu")
@@ -267,49 +267,6 @@ func (s *STDOutputManager) ValidationErrorTableBodyOutput(results []ValidationRe
 
 func (s *STDOutputManager) Put(result ValidationResult) error {
 	openapi3.SchemaErrorDetailsDisabled = true
-	//s.TableOutput(result)
-	//if result.Kind == "" {
-	//	log2.Success(result.FileName, "contains an empty YAML document")
-	//} else if !result.ValidatedAgainstSchema {
-	//	log2.Warn(result.FileName, "containing a", result.Kind, fmt.Sprintf("(%s)", result.QualifiedName()), "was not validated against a schema")
-	//} else if !result.Deleted && len(result.ErrorsForOriginal) == 0 {
-	//	log2.Success(result.Kind, fmt.Sprintf("(%s)", result.QualifiedName()))
-	//}
-	//
-	//if len(result.LatestAPIVersion) > 0 {
-	//	if result.Deleted {
-	//		log2.Warn(result.Kind, fmt.Sprintf("(%s)", result.QualifiedName()), result.APIVersion, result.LatestAPIVersion)
-	//	} else if result.Deprecated {
-	//		log2.Warn(result.Kind, fmt.Sprintf("(%s)", result.QualifiedName()), result.APIVersion, result.LatestAPIVersion)
-	//	} else {
-	//		log2.Warn(result.Kind, fmt.Sprintf("(%s)", result.QualifiedName()), result.APIVersion, result.LatestAPIVersion)
-	//	}
-	//}
-	//if len(result.DeprecationForOriginal) > 0 {
-	//	fmt.Printf("Deprecations for %s %s %s\n", result.APIVersion, result.Kind, fmt.Sprintf("(%s)", result.QualifiedName()))
-	//	for _, desc := range result.DeprecationForOriginal {
-	//		log2.Warn(result.Kind, fmt.Sprintf("(%s)", result.QualifiedName()), strings.Join(desc.JSONPointer(), "/"), desc.Reason)
-	//	}
-	//}
-	//if len(result.ErrorsForOriginal) > 0 {
-	//	fmt.Printf("Validation error for %s %s %s\n", result.APIVersion, result.Kind, fmt.Sprintf("(%s)", result.QualifiedName()))
-	//	for _, desc := range result.ErrorsForOriginal {
-	//		log2.Warn(result.Kind, fmt.Sprintf("(%s)", result.QualifiedName()), strings.Join(desc.JSONPointer(), "/"), desc.Reason)
-	//	}
-	//}
-	//if len(result.DeprecationForLatest) > 0 {
-	//	fmt.Printf("Deprecations for %s %s %s\n", result.LatestAPIVersion, result.Kind, fmt.Sprintf("(%s)", result.QualifiedName()))
-	//	for _, desc := range result.DeprecationForLatest {
-	//		log2.Warn(result.Kind, fmt.Sprintf("(%s)", result.QualifiedName()), strings.Join(desc.JSONPointer(), "/"), desc.Reason)
-	//	}
-	//}
-	//if len(result.ErrorsForLatest) > 0 {
-	//	fmt.Printf("Validation error for %s %s %s\n", result.LatestAPIVersion, result.Kind, fmt.Sprintf("(%s)", result.QualifiedName()))
-	//	for _, desc := range result.ErrorsForLatest {
-	//		log2.Warn(result.Kind, fmt.Sprintf("(%s)", result.QualifiedName()), strings.Join(desc.JSONPointer(), "/"), desc.Reason)
-	//	}
-	//}
-
 	return nil
 }
 

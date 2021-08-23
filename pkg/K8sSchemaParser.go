@@ -315,8 +315,12 @@ func (ks *kubeSpec) IsVersionSupported(apiVersion, kind string) bool {
 	if kim, ok := ks.kindInfoMap[strings.ToLower(kind)]; ok {
 		//fmt.Printf("found %s \n", kind)
 		for _, ki := range kim {
-			//fmt.Printf("%s:%s\n", apiVersion, ki.Version)
-			if strings.EqualFold(ki.Version, apiVersion) {
+			//fmt.Printf("%s:%s:%s\n", apiVersion, ki.Version, ki.RestPath)
+			gv := ki.Version
+			if len(ki.Group) > 0 {
+				gv = fmt.Sprintf("%s/%s", ki.Group, ki.Version)
+			}
+			if strings.EqualFold(gv, apiVersion) && len(ki.RestPath) > 0 {
 				return true
 			}
 		}

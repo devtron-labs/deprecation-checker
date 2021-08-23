@@ -109,18 +109,32 @@ func ValidateCluster(cluster *pkg.Cluster, conf *pkg.Config) ([]pkg.ValidationRe
 		}
 		validationResults = append(validationResults, validationResult)
 	}
-	cache := make(map[string]bool, 0)
-	for _, result := range validationResults {
-		if _, ok := cache[fmt.Sprintf("%s/%s", result.LatestAPIVersion, result.Kind)]; !ok {
+	apiVersionKindCache := make(map[string]bool, 0)
+	for i, result := range validationResults {
+		if _, ok := apiVersionKindCache[fmt.Sprintf("%s/%s", result.LatestAPIVersion, result.Kind)]; !ok {
 			isSupported := kubeC.IsVersionSupported(conf.KubernetesVersion,  result.LatestAPIVersion, result.Kind)
-			cache[fmt.Sprintf("%s/%s", result.LatestAPIVersion, result.Kind)] = isSupported
+			apiVersionKindCache[fmt.Sprintf("%s/%s", result.LatestAPIVersion, result.Kind)] = isSupported
+			//fmt.Printf("latest issupported: checking for %s result %t\n", fmt.Sprintf("%s/%s", result.LatestAPIVersion, result.Kind), isSupported)
+
 		}
-		isSupported := cache[fmt.Sprintf("%s/%s", result.LatestAPIVersion, result.Kind)]
+		isSupported := apiVersionKindCache[fmt.Sprintf("%s/%s", result.LatestAPIVersion, result.Kind)]
+		//fmt.Printf("latest: checking for %s result %t\n", fmt.Sprintf("%s/%s", result.LatestAPIVersion, result.Kind), isSupported)
+
 		if isSupported {
 			result.IsVersionSupported = 1
 		} else {
 			result.IsVersionSupported = 2
 		}
+		if _, ok := apiVersionKindCache[fmt.Sprintf("%s/%s", result.APIVersion, result.Kind)]; !ok {
+			isSupported := kubeC.IsVersionSupported(conf.KubernetesVersion,  result.APIVersion, result.Kind)
+			apiVersionKindCache[fmt.Sprintf("%s/%s", result.APIVersion, result.Kind)] = isSupported
+			//fmt.Printf("current is supported: checking for %s result %t\n", fmt.Sprintf("%s/%s", result.APIVersion, result.Kind), isSupported)
+
+		}
+		isSupported = apiVersionKindCache[fmt.Sprintf("%s/%s", result.APIVersion, result.Kind)]
+		//fmt.Printf("current: checking for %s result %t\n", fmt.Sprintf("%s/%s", result.APIVersion, result.Kind), isSupported)
+		result.Deleted = !isSupported
+		validationResults[i] = result
 	}
 	return validationResults, nil
 }
