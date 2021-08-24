@@ -28,7 +28,9 @@ type Cluster struct {
 func NewCluster(kubeconfig string, kubecontext string) *Cluster {
 	cluster := Cluster{}
 	pathOptions := clientcmd.NewDefaultPathOptions()
-	pathOptions.GlobalFile = kubeconfig
+	if len(kubeconfig) != 0 {
+		pathOptions.GlobalFile = kubeconfig
+	}
 	config, err := pathOptions.GetStartingConfig()
 
 	configOverrides := clientcmd.ConfigOverrides{}

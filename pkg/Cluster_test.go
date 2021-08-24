@@ -20,7 +20,7 @@ func TestCluster_ServerVersion(t *testing.T) {
 			c := NewCluster("", "")
 			config := NewDefaultConfig()
 			config.SelectKinds = []string{"deployment"}
-			config.KubernetesVersion = "1.16"
+			config.TargetKubernetesVersion = "1.16"
 			config.SelectNamespaces = []string{"prod"}
 			got, err := c.ServerVersion()
 			if (err != nil) != tt.wantErr {

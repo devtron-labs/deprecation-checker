@@ -297,6 +297,9 @@ func (ks *kubeSpec) fetchLatestKinds() []schema.GroupVersionKind {
 	var gvka []schema.GroupVersionKind
 	for kind, info := range ks.kindInfoMap {
 		last := info[len(info) - 1]
+		if len(last.RestPath) == 0 {
+			continue
+		}
 		gvk := schema.GroupVersionKind{
 			Group:   last.Group,
 			Version: last.Version,

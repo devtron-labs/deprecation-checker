@@ -19,7 +19,6 @@ package main
 
 import (
 	"crypto/tls"
-	"errors"
 	"fmt"
 	"github.com/devtron-labs/deprecation-checker/kubedd"
 	"github.com/devtron-labs/deprecation-checker/pkg"
@@ -97,13 +96,6 @@ var RootCmd = &cobra.Command{
 			}
 		}
 
-		config.IgnoreKeysFromDeprecation = ignoreKeysFromDeprecation
-		config.IgnoreKeysFromValidation = ignoreKeysFromValidation
-		config.IgnoreKinds = ignoreKinds
-		config.SelectKinds = selectKinds
-		config.IgnoreNamespaces = ignoreNamespaces
-		config.SelectNamespaces = selectNamespaces
-
 		success := true
 
 		// Assert that colors will definitely be used if requested
@@ -111,14 +103,13 @@ var RootCmd = &cobra.Command{
 			color.NoColor = false
 		}
 
-		if len(args) < 1 && len(directories) < 1 && len(kubeconfig) < 1 {
-			log.Error(errors.New("at least one file or one directory or kubeconfig path should be passed as argument"))
-			os.Exit(1)
-		}
+		//if len(args) < 1 && len(directories) < 1 && len(kubeconfig) < 1 {
+		//	log.Error(errors.New("at least one file or one directory or kubeconfig path should be passed as argument"))
+		//	os.Exit(1)
+		//}
 		if len(args) > 0 || len(directories) > 0 {
 			success = processFiles(args)
-		}
-		if len(kubeconfig) > 0 {
+		} else {
 			processCluster()
 		}
 
@@ -191,7 +182,7 @@ func processCluster() bool {
 
 	serverVersion, _ := cluster.ServerVersion()
 	fmt.Println("")
-	fmt.Printf("Results for cluster at version %s\n", serverVersion)
+	fmt.Printf("Results for cluster at version %s to %s\n", serverVersion, config.TargetKubernetesVersion)
 	fmt.Println("-------------------------------------------")
 	results = removeIgnoredKeys(results)
 	outputManager.PutBulk(results)
@@ -330,12 +321,6 @@ func init() {
 	pkg.AddKubeaddFlags(RootCmd, config)
 	RootCmd.Flags().BoolVarP(&forceColor, "force-color", "", false, "Force colored output even if stdout is not a TTY")
 	RootCmd.SetVersionTemplate(`{{.Version}}`)
-	RootCmd.Flags().StringSliceVarP(&selectNamespaces, "select-namespace", "", []string{}, "A comma-separated list of namespaces to be selected, if left empty all namespaces are selected")
-	RootCmd.Flags().StringSliceVarP(&ignoreNamespaces, "ignore-namespace", "", []string{"kube-system"}, "A comma-separated list of namespaces to be skipped")
-	RootCmd.Flags().StringSliceVarP(&ignoreKinds, "ignore-kind", "", []string{"event"}, "A comma-separated list of kinds to be skipped")
-	RootCmd.Flags().StringSliceVarP(&selectKinds, "select-kind", "", []string{}, "A comma-separated list of kinds to be selected, if left empty all namespaces are selected")
-	RootCmd.Flags().StringSliceVarP(&ignoreKeysFromDeprecation, "ignore-keys-for-deprecation", "", []string{"metadata*", "status*"}, "A comma-separated list of keys to be ignored for depreciation check")
-	RootCmd.Flags().StringSliceVarP(&ignoreKeysFromValidation, "ignore-keys-for-validation", "", []string{"status*", "metadata*"}, "A comma-separated list of keys to be ignored for validation check")
 	RootCmd.Flags().StringSliceVarP(&directories, "directories", "d", []string{}, "A comma-separated list of directories to recursively search for YAML documents")
 	RootCmd.Flags().StringSliceVarP(&ignoredPathPatterns, "ignored-path-patterns", "i", []string{}, "A comma-separated list of regular expressions specifying paths to ignore")
 	RootCmd.Flags().StringSliceVarP(&ignoredPathPatterns, "ignored-filename-patterns", "", []string{}, "An alias for ignored-path-patterns")

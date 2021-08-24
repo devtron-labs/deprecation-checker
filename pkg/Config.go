@@ -30,17 +30,25 @@ type Config struct {
 	// for example)
 	DefaultNamespace string
 
-	// KubernetesVersion represents the version of Kubernetes
-	// for which we should load the schema
-	KubernetesVersion string
+	// TargetKubernetesVersion represents the version of Kubernetes
+	// to which we want to migrate
+	TargetKubernetesVersion string
 
-	// SchemaLocation is the base URL from which to search for schemas.
+	// SourceKubernetesVersion represents the version of Kubernetes
+	// on which kubernetes objects are running currently
+	SourceKubernetesVersion string
+
+	// TargetSchemaLocation is the base URL of target kubernetes version.
 	// It can be either a remote location or a local directory
-	SchemaLocation string
+	TargetSchemaLocation string
+
+	// SourceSchemaLocation is the base URL of source kubernetes versions.
+	// It can be either a remote location or a local directory
+	SourceSchemaLocation string
 
 	// AdditionalSchemaLocations is a list of alternative base URLs from
 	// which to search for schemas, given that the desired schema was not
-	// found at SchemaLocation
+	// found at TargetSchemaLocation
 	AdditionalSchemaLocations []string
 
 	// Strict tells kubedd whether to prohibit properties not in
@@ -54,13 +62,6 @@ type Config struct {
 	// ExitOnError tells kubedd whether to halt processing upon the
 	// first error encountered or to continue, aggregating all errors
 	ExitOnError bool
-
-	// KindsToSkip is a list of kubernetes resources types with which to skip
-	// schema validation
-	KindsToSkip []string
-
-	// KindsToReject is a list of case-sensitive prohibited kubernetes resources types
-	KindsToReject []string
 
 	// FileName is the name to be displayed when testing manifests read from stdin
 	FileName string
@@ -77,38 +78,54 @@ type Config struct {
 	// when retrieving schema content over HTTPS
 	InsecureSkipTLSVerify bool
 
+	// IgnoreKeysFromDeprecation is the list of keys to be skipped for depreciation check
 	IgnoreKeysFromDeprecation []string
+
+	// IgnoreKeysFromValidation is the list of keys to be skipped for validation check
 	IgnoreKeysFromValidation  []string
+
+	// SelectNamespaces is the list of namespaces to be validated, by default all namespaces are validated
 	SelectNamespaces          []string
+
+	// IgnoreNamespaces is the list of namespaces to be skipped for validation, by default none are skipped
 	IgnoreNamespaces          []string
+
+	// SelectKinds is the list of kinds to be validated, by default all kinds are validated
 	SelectKinds               []string
+
+	// IgnoreKinds is the list of kinds to be skipped for validation, by default none are skipped
 	IgnoreKinds               []string
+
+	// IgnoreNullErrors is the flag to ignore null value errors
+	IgnoreNullErrors 		  bool
 }
 
 // NewDefaultConfig creates a Config with default values
 func NewDefaultConfig() *Config {
 	return &Config{
-		DefaultNamespace:  "default",
-		FileName:          "stdin",
-		KubernetesVersion: "master",
+		DefaultNamespace:        "default",
+		FileName:                "stdin",
+		TargetKubernetesVersion: "master",
 	}
 }
 
 // AddKubeaddFlags adds the default flags for kubedd to cmd
 func AddKubeaddFlags(cmd *cobra.Command, config *Config) *cobra.Command {
-	cmd.Flags().StringVarP(&config.DefaultNamespace, "default-namespace", "n", "default", "Namespace to assume in resources if no namespace is set in metadata:namespace")
-	cmd.Flags().BoolVar(&config.ExitOnError, "exit-on-error", false, "Immediately stop execution when the first error is encountered")
-	cmd.Flags().BoolVar(&config.IgnoreMissingSchemas, "ignore-missing-schemas", false, "Skip validation for resource definitions without a schema")
-	cmd.Flags().BoolVar(&config.Strict, "strict", false, "Disallow additional properties not in schema")
 	cmd.Flags().StringVarP(&config.FileName, "filename", "f", "stdin", "filename to be displayed when testing manifests read from stdin")
-	cmd.Flags().StringSliceVar(&config.KindsToSkip, "skip-kinds", []string{}, "Comma-separated list of case-sensitive kinds to skip when validating against schemas")
-	cmd.Flags().StringSliceVar(&config.KindsToReject, "reject-kinds", []string{}, "Comma-separated list of case-sensitive kinds to prohibit validating against schemas")
-	cmd.Flags().StringVarP(&config.SchemaLocation, "schema-location", "s", "", "Base URL used to download schemas. Can also be specified with the environment variable KUBEDD_SCHEMA_LOCATION.")
-	cmd.Flags().StringSliceVar(&config.AdditionalSchemaLocations, "additional-schema-locations", []string{}, "Comma-seperated list of secondary base URLs used to download schemas")
-	cmd.Flags().StringVarP(&config.KubernetesVersion, "kubernetes-version", "v", "master", "Version of Kubernetes to validate against")
+	cmd.Flags().StringVarP(&config.TargetSchemaLocation, "target-schema-location", "", "", "TargetSchemaLocation is the base URL of target kubernetes version.")
+	cmd.Flags().StringVarP(&config.SourceSchemaLocation, "source-schema-location", "", "", "SourceSchemaLocation is the base URL of source kubernetes versions.")
+	cmd.Flags().StringVarP(&config.TargetKubernetesVersion, "target-kubernetes-version", "", "1.22", "Version of Kubernetes to migrate to")
+	cmd.Flags().StringVarP(&config.SourceKubernetesVersion, "source-kubernetes-version", "", "", "Version of Kubernetes on which kubernetes objects are deployed currently, ignored in case cluster is provided")
 	cmd.Flags().StringVarP(&config.OutputFormat, "output", "o", "", fmt.Sprintf("The format of the output of this script. Options are: %v", validOutputs()))
 	cmd.Flags().BoolVar(&config.Quiet, "quiet", false, "Silences any output aside from the direct results")
 	cmd.Flags().BoolVar(&config.InsecureSkipTLSVerify, "insecure-skip-tls-verify", false, "If true, the server's certificate will not be checked for validity. This will make your HTTPS connections insecure")
+	cmd.Flags().StringSliceVarP(&config.SelectNamespaces, "select-namespace", "", []string{}, "A comma-separated list of namespaces to be selected, if left empty all namespaces are selected")
+	cmd.Flags().StringSliceVarP(&config.IgnoreNamespaces, "ignore-namespace", "", []string{"kube-system"}, "A comma-separated list of namespaces to be skipped")
+	cmd.Flags().StringSliceVarP(&config.IgnoreKinds, "ignore-kind", "", []string{"event","CustomResourceDefinition"}, "A comma-separated list of kinds to be skipped")
+	cmd.Flags().StringSliceVarP(&config.SelectKinds, "select-kind", "", []string{}, "A comma-separated list of kinds to be selected, if left empty all namespaces are selected")
+	cmd.Flags().StringSliceVarP(&config.IgnoreKeysFromDeprecation, "ignore-keys-for-deprecation", "", []string{"metadata*", "status*"}, "A comma-separated list of keys to be ignored for depreciation check")
+	cmd.Flags().StringSliceVarP(&config.IgnoreKeysFromValidation, "ignore-keys-for-validation", "", []string{"status*", "metadata*"}, "A comma-separated list of keys to be ignored for validation check")
+	cmd.Flags().BoolVar(&config.IgnoreNullErrors, "ignore-null-errors", true, "Ignore null value errors")
 
 	return cmd
 }

@@ -50,7 +50,8 @@ const (
 )
 
 var (
-	hiWhite = color.New(color.FgWhite).SprintFunc()
+	hiWhite = color.New(color.FgWhite, color.Underline).SprintFunc()
+	green = color.New(color.FgHiGreen, color.Underline).SprintFunc()
 )
 
 func validOutputs() []string {
@@ -104,7 +105,10 @@ func (s *STDOutputManager) PutBulk(results []ValidationResult) error {
 		} else if len(result.LatestAPIVersion) > 0 {
 			newerVersion = append(newerVersion, result)
 		} else {
-			unchanged = append(unchanged, result)
+			if len(result.ErrorsForOriginal) > 0 || len(result.ErrorsForLatest) > 0 ||
+				len(result.DeprecationForOriginal) > 0 || len(result.DeprecationForLatest) > 0 {
+				unchanged = append(unchanged, result)
+			}
 		}
 	}
 	if len(deleted) > 0 {
@@ -145,13 +149,17 @@ func (s *STDOutputManager) PutBulk(results []ValidationResult) error {
 		s.ValidationErrorTableBodyOutput(newerVersion, false)
 	}
 	if len(unchanged) > 0 {
-		green := color.New(color.FgHiGreen, color.Underline).SprintFunc()
+
 		fmt.Printf("%s\n", green(">>>> Unchanged API Version's <<<<"))
 		//s.SummaryTableBodyOutput(unchanged)
+		fmt.Println("")
 		s.DeprecationTableBodyOutput(unchanged, true)
 		s.ValidationErrorTableBodyOutput(unchanged, true)
 	}
 
+	if len(deleted)+len(deprecated)+len(newerVersion)+len(unchanged) == 0 {
+		fmt.Printf("%s\n", green("Great!!! Everything will work as it is in new version without any changes"))
+	}
 	return nil
 }
 
@@ -167,7 +175,7 @@ func (s *STDOutputManager) SummaryTableBodyOutput(results []ValidationResult) {
 			migrationStatus = fmt.Sprintf("%s%d%s%s%s", "\033[31m", len(result.ErrorsForLatest), " issue(s):", "\033[97m", " fix issues before migration")
 		}
 		if result.IsVersionSupported == 2 {
-			migrationStatus = fmt.Sprintf("%s%s", "\033[31m", "Alert! cannot migrate to this version directly")
+			migrationStatus = fmt.Sprintf("%s%s", "\033[31m", fmt.Sprintf("Alert! cannot migrate kubernetes version"))
 		}
 		t.Rows = append(t.Rows, []string{result.ResourceNamespace, result.ResourceName, result.Kind, result.APIVersion, result.LatestAPIVersion, migrationStatus})
 	}
@@ -194,12 +202,15 @@ func (s *STDOutputManager) DeprecationTableBodyOutput(results []ValidationResult
 		return
 	}
 	if !currentVersion {
-		fmt.Println(hiWhite( "Deprecated fields against latest api version, recommeded to resolve them before migration"))
+		fmt.Println(hiWhite( "Deprecated fields against latest api version, recommended to resolve them before migration"))
 	} else {
 		fmt.Println(hiWhite("Deprecated fields against current api version, recommended to resolve them"))
 	}
-
-	t := table.Table{Headers: []string{"Namespace", "Name", "Kind", "API Version", "Field", "Reason"}}
+	apiVersionHeader := "API Version (Current Available)"
+	if !currentVersion {
+		apiVersionHeader = "API Version (Latest Available)"
+	}
+	t := table.Table{Headers: []string{"Namespace", "Name", "Kind", apiVersionHeader, "Field", "Reason"}}
 	c := table.DefaultConfig()
 	c.TitleColorCode = ansi.ColorCode("cyan+bu")
 	c.AltColorCodes = []string{ansi.LightWhite, ansi.ColorCode("white+h:237")}
@@ -216,7 +227,7 @@ func (s *STDOutputManager) DeprecationTableBodyOutput(results []ValidationResult
 		}
 	}
 	t.WriteTable(os.Stdout, c)
-	fmt.Println()
+	fmt.Println("")
 }
 
 func (s *STDOutputManager) ValidationErrorTableBodyOutput(results []ValidationResult, currentVersion bool) {
@@ -243,7 +254,11 @@ func (s *STDOutputManager) ValidationErrorTableBodyOutput(results []ValidationRe
 	} else {
 		fmt.Println(hiWhite(">>> Validation Errors against current api version <<<"))
 	}
-	t := table.Table{Headers: []string{"Namespace", "Name", "Kind", "API Version", "Field", "Reason"}}
+	apiVersionHeader := "API Version (Current Available)"
+	if !currentVersion {
+		apiVersionHeader = "API Version (Latest Available)"
+	}
+	t := table.Table{Headers: []string{"Namespace", "Name", "Kind", apiVersionHeader, "Field", "Reason"}}
 	c := table.DefaultConfig()
 	c.TitleColorCode = ansi.ColorCode("cyan+bu")
 	c.AltColorCodes = []string{ansi.LightWhite, ansi.ColorCode("white+h:237")}
@@ -262,7 +277,7 @@ func (s *STDOutputManager) ValidationErrorTableBodyOutput(results []ValidationRe
 		}
 	}
 	t.WriteTable(os.Stdout, c)
-	fmt.Println()
+	fmt.Println("")
 }
 
 func (s *STDOutputManager) Put(result ValidationResult) error {

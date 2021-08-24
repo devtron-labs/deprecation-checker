@@ -130,23 +130,29 @@ func (ks *kubeSpec) populateValidationResult(object map[string]interface{}) (Val
 func (ks *kubeSpec) applySchema(object map[string]interface{}, token string) (openapi3.MultiError, bool) {
 	deprecated := false
 	var validationError openapi3.MultiError
-	var scm *openapi3.Schema
-	var err error
-	for ; ; {
-		ok := false
-		dp, err := ks.Components.Schemas.JSONLookup(token)
-		if err != nil {
-			log.Debug(fmt.Sprintf("%v", err))
-			validationError = append(validationError, err)
-			return validationError, deprecated
-		}
-		if scm, ok = dp.(*openapi3.Schema); ok {
-			break
-		}
-		if ref, ok := dp.(*openapi3.Ref); ok {
-			token = ref.Ref
-		}
+	scm, err := ks.schemaLookup(token)
+	if err != nil {
+		log.Debug(fmt.Sprintf("%v", err))
+		validationError = append(validationError, err)
+		return validationError, deprecated
 	}
+	//var scm *openapi3.Schema
+	//var err error
+	//for ; ; {
+	//	ok := false
+	//	if strings.Index(token, "/") > 0 {
+	//		parts := strings.Split(token, "/")
+	//		token = parts[len(parts) - 1]
+	//	}
+	//	dp, err := ks.Components.Schemas.JSONLookup(token)
+	//
+	//	if scm, ok = dp.(*openapi3.Schema); ok {
+	//		break
+	//	}
+	//	if ref, ok := dp.(*openapi3.Ref); ok {
+	//		token = ref.Ref
+	//	}
+	//}
 
 	opts := []openapi3.SchemaValidationOption{openapi3.MultiErrors()}
 	depError := VisitJSON(scm, object, SchemaSettings{MultiError: true})
@@ -164,16 +170,35 @@ func (ks *kubeSpec) applySchema(object map[string]interface{}, token string) (op
 }
 
 func (ks *kubeSpec) getKeyForGVFromToken(token string) (string, error) {
-	dp, err := ks.Components.Schemas.JSONLookup(token)
+	scm, err := ks.schemaLookup(token)
 	if err != nil {
+		log.Debug(fmt.Sprintf("%v", err))
 		return "", err
 	}
-	scm := dp.(*openapi3.Schema)
 	gv, err := getKeyForGV(scm.Extensions["x-kubernetes-group-version-kind"].(json.RawMessage))
 	if err != nil {
 		return "", err
 	}
 	return gv, nil
+}
+
+func (ks *kubeSpec) schemaLookup(token string) (*openapi3.Schema, error) {
+	for ; ; {
+		if strings.Index(token, "/") > 0 {
+			parts := strings.Split(token, "/")
+			token = parts[len(parts) - 1]
+		}
+		dp, err := ks.Components.Schemas.JSONLookup(token)
+		if err != nil {
+			return nil, err
+		}
+		if scm, ok := dp.(*openapi3.Schema); ok {
+			return scm, nil
+		}
+		if ref, ok := dp.(*openapi3.Ref); ok {
+			token = ref.Ref
+		}
+	}
 }
 
 func (ks *kubeSpec) getKindsMappings(object map[string]interface{}) (original, latest string, err error) {
